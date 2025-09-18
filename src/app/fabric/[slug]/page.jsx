@@ -20,7 +20,7 @@ export async function generateMetadata({ params }) {
   const { slug } = await params;
 
   const res = await fetch(
-    `${process.env.NEXT_PUBLIC_API_BASE_URL}/product/slug/${slug}`,
+    `${process.env.NEXT_PUBLIC_API_BASE_URL}/product/${slug}`,
     { headers: apiHeaders(), next: { revalidate } }
   );
 
