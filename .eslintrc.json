@@ -1,0 +1,26 @@
+// .eslintrc.json
+{
+  "root": true,
+  "parser": "@typescript-eslint/parser",
+  "plugins": ["@typescript-eslint"],
+  "extends": [
+    "next/core-web-vitals",              // Next.js core rules + Web Vitals
+    "eslint:recommended",                // ESLint’s recommended rules
+    "plugin:@typescript-eslint/recommended", // Recommended TS rules
+    "prettier"                           // Disables ESLint rules that conflict with Prettier
+  ],
+  "rules": {
+    // Example overrides—you can tweak these as you like:
+    "no-unused-vars": "warn",
+    "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
+    "react/react-in-jsx-scope": "off",   // Next handles React import automatically
+    "react-hooks/rules-of-hooks": "error",
+    "react-hooks/exhaustive-deps": "warn"
+  },
+  "settings": {
+    "react": {
+      "version": "detect"
+    }
+  }
+  
+}
