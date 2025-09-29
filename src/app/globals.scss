@@ -1,0 +1,172 @@
+@import '~bootstrap/scss/bootstrap';
+@import "~slick-carousel/slick/slick.css"; 
+@import "swiper/css/bundle";
+@import 'node_modules/react-modal-video/scss/modal-video.scss';
+@import '../../public/assets/scss/main.scss';
+
+@font-face {
+  font-family: 'Jost';
+  src: url('/assets/fonts/Jost/Jost-VariableFont_wght.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Jost';
+  src: url('/assets/fonts/Jost/Jost-Italic-VariableFont_wght.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
+}
+
+body {
+  font-family: 'Jost', Arial, sans-serif;
+}
+:root{
+  /* Pull from header var if present, fallback 88px */
+  --header-offset: var(--tp-header-height, 88px);
+}
+
+/* Sticky sidebar with an internal scrollbar */
+.sticky-filter{
+  position: sticky;
+  top: var(--header-offset);
+  max-height: calc(100vh - var(--header-offset));
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-right: .5rem; /* space near scrollbar */
+}
+
+/* nicer scrollbars (optional) */
+.sticky-filter::-webkit-scrollbar{ width:8px; }
+.sticky-filter::-webkit-scrollbar-track{ background:transparent; }
+.sticky-filter::-webkit-scrollbar-thumb{ background:#d5d5d5; border-radius:8px; }
+.sticky-filter:hover::-webkit-scrollbar-thumb{ background:#c0c0c0; }
+.sticky-filter{ scrollbar-width:thin; scrollbar-color:#d5d5d5 transparent; }
+
+/* ensure product area isn’t clipped */
+.tp-shop-main-wrapper{ overflow: visible; }
+
+/* mobile: no sticky; use offcanvas */
+@media (max-width: 991.98px){
+  .sticky-filter{
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+}
+/* Add space between header and shop section when breadcrumb is removed */
+.shop-page-spacing {
+  padding-top: 40px; /* adjust gap size here */
+}
+/* sticky toolbar under header */
+.shop-toolbar-sticky{
+ /*  position: sticky; */
+  top: var(--header-offset, 88px);
+  z-index: 9;
+  background:#fff;
+  border-bottom:1px solid rgba(0,0,0,.06);
+}
+.shop-toolbar-sticky .tp-shop-top{ margin-bottom:0 !important; }
+.filter-header{
+  position: sticky;
+  top: 0; background: #fff; z-index: 2;
+  padding: 8px 0 10px; border-bottom: 1px solid rgba(0,0,0,.06);
+}
+.filter-reset-btn{
+  font: 600 12px/1 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;
+  padding: 8px 12px; border-radius: 8px;
+  border: 1px solid #e5e7eb; background:#fff; color:#111827;
+}
+.filter-reset-btn.is-active{
+  background:#0b1220; color:#fff; border-color:#0b1220;
+  box-shadow: 0 2px 10px rgba(17,24,39,.15);
+}
+/* Base (tablet/desktop) — keep your existing inline look */
+.shop-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  justify-content: end;
+}
+
+/* MOBILE: Search + Filter on ONE ROW; search grows, filter fixed */
+@media (max-width: 640px) {
+  .tp-shop-top-right.shop-toolbar {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 132px; /* left = search (flex), right = filter */
+    gap: 10px;
+    align-items: center;
+  }
+
+  /* Ensure the search block can expand to full width and inherit header styles */
+  .shop-toolbar__search { min-width: 0; }
+  .shop-toolbar__search form { width: 100%; }
+  .shop-toolbar__search .tp-header-search-wrapper { width: 100%; }
+
+  /* Filter button fills its grid cell (no visual override to search) */
+  .shop-toolbar__filter .tp-filter-btn {
+    width: 100%;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: 8px;
+    /* keep your theme; remove if you already style it globally */
+    background: #0b1b2b;
+    color: #fff;
+    border: 1px solid transparent;
+  }
+  .shop-toolbar__filter .tp-filter-btn svg,
+  .shop-toolbar__filter .tp-filter-btn svg * {
+    stroke: currentColor;
+    fill: currentColor;
+  }
+}
+
+/* Optional: tiny phones */
+@media (max-width: 320px) {
+  .tp-shop-top-right.shop-toolbar {
+    grid-template-columns: minmax(0, 1fr) 120px;
+  }
+}
+.tp-header-search-box input {
+    padding-left: 25px;
+    padding-right: 88px;
+    width: 100%;
+    height: 46px;
+    background-color: var(--tp-common-white);
+    color: var(--tp-common-black);
+    border: 0;
+}
+
+:root {
+  --page-xpad: 16px; /* optional: keep small breathing space */
+}
+
+.container,
+.container-sm,
+.container-md,
+.container-lg,
+.container-xl,
+.container-xxl {
+  max-width: 100% !important;
+  width: 100% !important;
+  padding-left: var(--page-xpad);
+  padding-right: var(--page-xpad);
+}
+
+/* If you also use .container-fluid, make sure no padding */
+.container-fluid {
+  max-width: 100% !important;
+  width: 100% !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+
+
+
+
+  

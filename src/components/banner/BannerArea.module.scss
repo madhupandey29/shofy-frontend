@@ -1,0 +1,23 @@
+.tpBannerItem {
+  position: relative;
+  margin-bottom: 30px;
+  z-index: 1;
+  /* Add more styles as needed */
+}
+.tpBannerThumb {
+  background-size: cover;
+  background-position: center;
+  transition: 0.3s;
+  min-height: 220px;
+  /* Add more styles as needed */
+}
+.tpBannerContent {
+  padding: 24px 16px 0 16px;
+  /* Add more styles as needed */
+}
+.tpBannerTitle {
+  font-size: 2rem;
+  font-weight: 600;
+  margin: 0 0 10px 0;
+  /* Add more styles as needed */
+} 
