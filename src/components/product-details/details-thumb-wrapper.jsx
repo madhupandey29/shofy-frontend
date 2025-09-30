@@ -165,7 +165,7 @@ const DetailsThumbWrapper = ({
         </div>
       </nav>
 
-      {/* Main viewer */}
+      {/* Main viewerr */}
       <div className="tab-content m-img">
         <div className="tab-pane fade show active">
           <div className="tp-product-details-nav-main-thumb p-relative">
