@@ -4,12 +4,21 @@ import React, { useEffect, useState, useId, useMemo } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useDispatch } from 'react-redux';
-import { useAuthAction, formatProductForCart, formatProductForWishlist } from '@/utils/authUtils';
+import { useDispatch, useSelector } from 'react-redux';
+
+import { formatProductForCart, formatProductForWishlist } from '@/utils/authUtils';
 import { add_to_wishlist } from '@/redux/features/wishlist-slice';
 import { add_cart_product } from '@/redux/features/cartSlice';
 
-import { Cart, QuickView, Wishlist } from '@/svg';
+import {
+  Cart,
+  CartActive,
+  Wishlist,
+  WishlistActive,
+  QuickView,
+  Share,
+} from '@/svg';
+
 import { handleProductModal } from '@/redux/features/productModalSlice';
 import { useGetProductsByGroupcodeQuery } from '@/redux/features/productApi';
 import { useGetSeoByProductQuery } from '@/redux/features/seoApi';
@@ -27,7 +36,7 @@ const toText = (v) => {
 const isNoneish = (s) => {
   if (!s) return true;
   const t = String(s).trim().toLowerCase().replace(/\s+/g, ' ');
-  return t === 'none' || t === 'na' || t === 'none/ na' || t === 'none / na' || t === 'n/a' || t === '-';
+  return ['none', 'na', 'none/ na', 'none / na', 'n/a', '-'].includes(t);
 };
 const round = (n, d = 1) => (isFinite(n) ? Number(n).toFixed(d).replace(/\.0+$/, '') : '');
 const gsmToOz = (gsm) => gsm * 0.0294935;
@@ -46,7 +55,6 @@ const ProductItem = ({ product }) => {
   const router = useRouter();
   const rainbowId = useId();
   const dispatch = useDispatch();
-  const { requireAuth } = useAuthAction();
 
   const [showActions, setShowActions] = useState(false);
   const [supportsHover, setSupportsHover] = useState(true);
@@ -57,28 +65,15 @@ const ProductItem = ({ product }) => {
     }
   }, []);
 
-  const handleAddProduct = async (prd, e) => {
+  // act immediately
+  const handleAddProduct = (prd, e) => {
     e?.stopPropagation?.(); e?.preventDefault?.();
-    try {
-      await requireAuth(async () => {
-        const productToAdd = formatProductForCart(prd);
-        dispatch(add_cart_product(productToAdd));
-      })();
-      return true;
-    } catch { return false; }
+    dispatch(add_cart_product(formatProductForCart(prd)));
   };
-
-  const handleWishlistProduct = async (prd, e) => {
+  const handleWishlistProduct = (prd, e) => {
     e?.stopPropagation?.(); e?.preventDefault?.();
-    try {
-      await requireAuth(async () => {
-        const productToAdd = formatProductForWishlist(prd);
-        dispatch(add_to_wishlist(productToAdd));
-      })();
-      return true;
-    } catch { return false; }
+    dispatch(add_to_wishlist(formatProductForWishlist(prd)));
   };
-
   const openQuickView = (prd, e) => {
     e?.preventDefault?.(); e?.stopPropagation?.();
     dispatch(handleProductModal({ ...prd }));
@@ -168,6 +163,34 @@ const ProductItem = ({ product }) => {
     categoryLabel &&
     String(categoryLabel).trim().toLowerCase() !== String(fabricTypeVal).trim().toLowerCase();
 
+  /* Share */
+  const handleShare = async (_prd, e) => {
+    e?.stopPropagation?.(); e?.preventDefault?.();
+    try {
+      const url =
+        (typeof window !== 'undefined'
+          ? `${window.location.origin}/fabric/${slug}`
+          : `/fabric/${slug}`);
+      const title = typeof titleHtml === 'string' ? titleHtml : 'Fabric';
+      const text = 'Check out this fabric on Amrita Global Enterprises';
+      if (typeof navigator !== 'undefined' && navigator.share) {
+        await navigator.share({ title, text, url });
+      } else if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(url);
+        alert('Link copied!');
+      } else {
+        prompt('Copy link', url);
+      }
+    } catch {/*  */}
+  };
+
+  /* select from slices */
+  const cartItems = useSelector((s) => s.cart?.cart_products || []);
+  const wishlistItems = useSelector((s) => s.wishlist?.wishlist || []);
+
+  const inCart = cartItems.some((it) => String(it?._id) === String(productId));
+  const inWishlist = wishlistItems.some((it) => String(it?._id) === String(productId));
+
   return (
     <div className="product-col">
       <div
@@ -202,60 +225,56 @@ const ProductItem = ({ product }) => {
               </div>
             </Link>
 
+            {/* centered options ribbon */}
             {showOptionsBadge && (
               <button
                 type="button"
-                className="premium-badge"
+                className="options-ribbon"
                 onClick={() => router.push(`/fabric/${slug}`)}
                 aria-label={`${optionCount} options for ${typeof titleHtml === 'string' ? titleHtml : 'this product'}`}
               >
-                <div className="badge-background" />
-                <div className="badge-content">
-                  <div className="icon-container" aria-hidden="true">
-                    <svg className="badge-icon" viewBox="0 0 24 24">
-                      <defs>
-                        <linearGradient id={`spectrum-${rainbowId}`} x1="0%" y1="0%" x2="100%" y2="0%">
-                          <stop offset="0%" stopColor="#FF002E" />
-                          <stop offset="16%" stopColor="#FF6A00" />
-                          <stop offset="33%" stopColor="#FFD400" />
-                          <stop offset="50%" stopColor="#00C853" />
-                          <stop offset="66%" stopColor="#00E5FF" />
-                          <stop offset="83%" stopColor="#2979FF" />
-                          <stop offset="100%" stopColor="#D500F9" />
-                        </linearGradient>
-                        <radialGradient id={`sun-${rainbowId}`} cx="50%" cy="45%" r="60%">
-                          <stop offset="0%" stopColor="#FFF8E1" />
-                          <stop offset="60%" stopColor="#FFD54F" />
-                          <stop offset="100%" stopColor="#FFB300" />
-                        </radialGradient>
-                      </defs>
-                      <circle cx="12" cy="12" r="10.2" fill="none" stroke={`url(#spectrum-${rainbowId})`} strokeWidth="1.4" opacity=".9" />
-                      <g className="petal-group">
-                        {Array.from({ length: 8 }).map((_, i) => (
-                          <path
-                            key={i}
-                            transform={`rotate(${i * 45} 12 12)`}
-                            d="M12 2.6 C 13.6 5.4, 13.6 8.6, 12 11.4 C 10.4 8.6, 10.4 5.4, 12 2.6 Z"
-                            fill={`url(#spectrum-${rainbowId})`}
-                            stroke="#fff" strokeOpacity=".35" strokeWidth=".4"
-                          />
-                        ))}
-                      </g>
-                      <circle cx="12" cy="12" r="3.8" fill={`url(#sun-${rainbowId})`} stroke="#fff" strokeOpacity=".55" strokeWidth=".5" />
-                      <circle cx="10.6" cy="10.8" r=".9" fill="#fff" opacity=".9" />
-                    </svg>
-                  </div>
-                  <span className="badge-text">{optionCount} options</span>
-                </div>
+                <span className="ribbon-inner">
+                  <span className="ribbon-icon" aria-hidden="true">
+                    {/* use your saved SVG icon */}
+                    <Image
+                      src="/assets/img/product/icons/tshirt.svg"
+                      alt="Options Icon"
+                      width={20}
+                      height={20}
+                      className="badge-icon"
+                      priority={false}
+                    />
+                  </span>
+                  <span className="ribbon-text"><strong>{optionCount}</strong> Options</span>
+                </span>
               </button>
             )}
 
             <div className="product-actions">
-              <button type="button" onClick={(e) => handleAddProduct(product, e)} className="action-button" aria-label="Add to cart" title="Add to cart">
-                <Cart />
+              <button
+                type="button"
+                onClick={(e) => handleAddProduct(product, e)}
+                className={`action-button ${inCart ? 'active cart-active' : ''}`}
+                aria-label={inCart ? 'In cart' : 'Add to cart'}
+                aria-pressed={inCart}
+                title={inCart ? 'Added to cart' : 'Add to cart'}
+              >
+                {inCart ? <CartActive /> : <Cart />}
               </button>
-              <button type="button" onClick={(e) => handleWishlistProduct(product, e)} className="action-button" aria-label="Add to wishlist" title="Add to wishlist">
-                <Wishlist />
+
+              <button
+                type="button"
+                onClick={(e) => handleWishlistProduct(product, e)}
+                className={`action-button ${inWishlist ? 'active wishlist-active' : ''}`}
+                aria-label={inWishlist ? 'In wishlist' : 'Add to wishlist'}
+                aria-pressed={inWishlist}
+                title={inWishlist ? 'Added to wishlist' : 'Add to wishlist'}
+              >
+                {inWishlist ? <WishlistActive /> : <Wishlist />}
+              </button>
+
+              <button type="button" onClick={(e) => handleShare(product, e)} className="action-button" aria-label="Share product" title="Share">
+                <Share />
               </button>
               <button type="button" onClick={(e) => openQuickView(product, e)} className="action-button" aria-label="Quick view" title="Quick view">
                 <QuickView />
@@ -295,98 +314,96 @@ const ProductItem = ({ product }) => {
       </div>
 
       <style jsx>{`
-        /* ===== GRID LAYOUT (4 / 2 / 1) ===== */
-        :global(.products-grid){
-          display:flex;
-          flex-wrap:wrap;
-          margin-left:-12px;
-          margin-right:-12px;
-        }
-        :global(.products-grid .product-col){
-          flex:0 0 25%;
-          max-width:25%;
-          padding:0 12px;
-          box-sizing:border-box;
-        }
-        @media (max-width:991px){
-          :global(.products-grid .product-col){ flex:0 0 50%; max-width:50%; }
-        }
-        @media (max-width:575px){
-          :global(.products-grid .product-col){ flex:0 0 100%; max-width:100%; padding:0 8px; }
-          :global(.products-grid){ margin-left:-8px; margin-right:-8px; }
-        }
+        :global(.products-grid){ display:flex; flex-wrap:wrap; gap:24px; margin:0; }
+        :global(.products-grid .product-col){ flex:1 1 calc(25% - 24px); max-width:calc(25% - 24px); }
+        @media (max-width:991px){ :global(.products-grid .product-col){ flex:1 1 calc(50% - 24px); max-width:calc(50% - 24px); } }
+        @media (max-width:575px){ :global(.products-grid .product-col){ flex:1 1 100%; max-width:100%; } }
 
-        /* ===== CARD STYLES ===== */
         .fashion-product-card{
           --primary:#0f172a; --muted:#6b7280; --accent:#7c3aed;
+          --success:#10b981; --danger:#ef4444;
           --card-bg:#fff; --card-border:rgba(17,24,39,.12); --inner-border:rgba(17,24,39,.08);
           --shadow-sm:0 1px 2px rgba(0,0,0,.04);
-          --shadow-xl:0 20px 25px rgba(0,0,0,.10),0 10px 10px rgba(0,0,0,.04);
-          --title-font:'Montserrat',system-ui,Arial,sans-serif;
-          --detail-font:'Roboto',system-ui,Arial,sans-serif;
-          position:relative;width:100%;height:100%;
-          transition:transform .3s ease-out,box-shadow .3s ease-out;will-change:transform
+          position:relative; width:100%; height:100%;
+          transition:transform .3s ease-out, box-shadow .3s ease-out;
         }
-        .fashion-product-card:hover{transform:translateY(-2px)}
-        .card-wrapper{position:relative;width:100%;height:100%;background:var(--card-bg);border:2px solid var(--card-border);border-radius:14px;overflow:hidden;box-shadow:var(--shadow-sm);transition:box-shadow .3s ease}
+        .fashion-product-card:hover{ transform:translateY(-2px); }
+        .card-wrapper{ background:var(--card-bg); border:2px solid var(--card-border); border-radius:14px; overflow:hidden; box-shadow:var(--shadow-sm); }
 
-        .product-image-container{position:relative;aspect-ratio:1/1;min-height:220px;overflow:hidden}
-        .image-link{display:block;height:100%}
-        .image-wrapper{position:relative;width:100%;height:100%;transition:transform .6s cubic-bezier(.22,1,.36,1);will-change:transform;background:#fff}
-        .fashion-product-card:hover .image-wrapper{transform:scale(1.02)}
-        :global(.img-main){position:absolute;inset:0;object-fit:cover;}
-        .image-overlay{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.16) 0%,transparent 40%);z-index:2;pointer-events:none}
+        .product-image-container{ position:relative; aspect-ratio:1/1; min-height:220px; overflow:hidden; }
+        .image-link{ display:block; height:100%; }
+        .image-wrapper{ position:relative; width:100%; height:100%; transition:transform .6s cubic-bezier(.22,1,.36,1); background:#fff; }
+        .fashion-product-card:hover .image-wrapper{ transform:scale(1.02); }
+        :global(.img-main){ position:absolute; inset:0; object-fit:cover; }
+        .image-overlay{ position:absolute; inset:0; background:linear-gradient(to top, rgba(0,0,0,.16) 0%, transparent 40%); z-index:1; }
 
-        .premium-badge{
-          position:absolute; left:12px; bottom:-12px;
-          display:inline-flex;align-items:center;padding:0;border-radius:24px;overflow:hidden;
-          z-index:5;cursor:pointer;border:0;background:transparent;
-          box-shadow:0 4px 16px rgba(0,0,0,.10);transition:transform .25s ease,box-shadow .25s ease;
+        /* === Refined compact “Options” pill === */
+        .options-ribbon{
+          position:absolute;
+          left:50%;
+          transform:translateX(-50%);
+          bottom:10px;
+          border:0;
+          background:transparent;
+          cursor:pointer;
+          z-index:3;
         }
-        .premium-badge:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-        .premium-badge:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(0,0,0,.14)}
-        .badge-background{position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.95),rgba(255,255,255,.88));backdrop-filter:blur(8px);z-index:1}
-        .badge-content{position:relative;z-index:2;display:inline-flex;gap:8px;padding:6px 12px 6px 8px}
-        .badge-text{font-size:12.5px;font-weight:600;color:#111827;letter-spacing:.01em}
-        .icon-container{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:#fff;border:1px solid rgba(0,0,0,.06);box-shadow:0 2px 8px rgba(0,0,0,.12)}
-        .badge-icon{width:18px;height:18px;display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,.15));transition:transform .35s ease}
-        .petal-group{transform-origin:12px 12px}
-        .premium-badge:hover .badge-icon{transform:rotate(6deg) scale(1.02)}
+        .ribbon-inner{
+          display:flex; align-items:center; gap:6px;
+          height:26px; padding:0 10px; border-radius:13px;
+          background:rgba(255,255,255,0.28);
+          backdrop-filter:blur(8px) saturate(180%);
+          border:1px solid rgba(255,255,255,0.28);
+          box-shadow:0 4px 10px rgba(0,0,0,0.10);
+          transition:all .2s ease;
+        }
+        .options-ribbon:hover .ribbon-inner{ background:rgba(255,255,255,0.45); }
 
-        .product-actions{position:absolute;top:12px;right:12px;display:flex;flex-direction:column;gap:8px;opacity:0;transform:translateY(-6px);transition:opacity .25s ease,transform .25s ease;z-index:3}
-        @media (hover:hover) and (pointer:fine){.fashion-product-card:hover .product-actions,.fashion-product-card:focus-within .product-actions{opacity:1;transform:translateY(0)}}
-        .fashion-product-card.show-actions .product-actions{opacity:1;transform:translateY(0)}
-        .action-button{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.95);backdrop-filter:blur(4px);border:1px solid rgba(0,0,0,.06);box-shadow:0 4px 12px rgba(0,0,0,.08);transition:transform .2s ease,box-shadow .2s ease,background .2s ease}
-        .action-button:hover{background:#fff;transform:scale(1.06);box-shadow:0 6px 16px rgba(0,0,0,.12)}
-        .action-button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-        .action-button :global(svg){width:14px;height:14px;color:var(--primary);transition:color .2s ease}
-        .action-button:hover :global(svg){color:#7c3aed}
+        .ribbon-icon{ display:inline-grid; place-items:center; width:20px; height:20px; }
+        .badge-icon{ width:20px; height:20px; display:block; filter:drop-shadow(0 0 2px rgba(255,255,255,0.9)); }
 
-        .product-info{padding:14px 12px 12px;border-top:1px solid var(--inner-border);background:#fff}
-        @media (max-width:480px){ .product-info{ padding:12px 10px 10px; } }
+        .ribbon-text{
+          font-family: Arial, "Helvetica Neue", sans-serif;
+          font-size:13px; font-weight:600; color:#111827; letter-spacing:.2px;
+        }
+        .ribbon-text strong{ font-weight:700; }
 
-        .product-category{font-family: var(--detail-font);font-size:11px;font-weight:600;letter-spacing:.02em;color:#6b7280;margin-bottom:4px;}
+        .product-actions{ position:absolute; top:12px; right:12px; display:flex; flex-direction:column; gap:8px; opacity:0; transform:translateY(-6px); transition:opacity .25s ease, transform .25s ease; z-index:3; }
+        @media (hover:hover) and (pointer:fine){ .fashion-product-card:hover .product-actions, .fashion-product-card:focus-within .product-actions{ opacity:1; transform:translateY(0); } }
+        .fashion-product-card.show-actions .product-actions{ opacity:1; transform:translateY(0); }
+
+        .action-button{ width:32px; height:32px; border-radius:50%; display:grid; place-items:center; background:rgba(255,255,255,.95); backdrop-filter:blur(4px); border:1px solid rgba(0,0,0,.06); box-shadow:0 4px 12px rgba(0,0,0,.08); transition:transform .2s ease, box-shadow .2s ease, background .2s ease, border-color .2s ease; }
+        .action-button:hover{ background:#fff; transform:scale(1.06); box-shadow:0 6px 16px rgba(0,0,0,.12); }
+        .action-button:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+        .action-button :global(svg){ width:14px; height:14px; color:var(--primary); transition:color .2s ease; }
+        .action-button:hover :global(svg){ color:#7c3aed; }
+
+        .action-button.active{ box-shadow:0 6px 16px rgba(0,0,0,.12); }
+        .action-button.cart-active{ background:#f0fdf4; border-color:rgba(16,185,129,.35); }
+        .action-button.cart-active :global(svg){ color:#10b981; }
+        .action-button.wishlist-active{ background:#fef2f2; border-color:rgba(239,68,68,.35); }
+        .action-button.wishlist-active :global(svg){ color:#ef4444; }
+
+        .product-info{ padding:18px 12px 12px; border-top:1px solid var(--inner-border); background:#fff; }
+        .product-category{ font-size:11px; font-weight:600; letter-spacing:.02em; color:#6b7280; margin-bottom:4px; }
 
         .product-title{
-          font-family: var(--title-font);
-          font-size: clamp(14px, 1.9vw, 16px);
-          font-weight: 700; line-height: 1.22; letter-spacing: .002em;
-          color: #111827; margin: 0 0 6px;
-          display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word;
+          font-family:'Montserrat',system-ui,Arial,sans-serif;
+          font-size:clamp(14px,1.9vw,16px);
+          font-weight:700; line-height:1.22; letter-spacing:.002em; color:#111827; margin:0 0 6px;
+          display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; word-break:break-word;
         }
-        .product-title :global(a){color:inherit;text-decoration:none}
-        .product-title :global(a:hover){color:#7c3aed}
+        .product-title :global(a){ color:inherit; text-decoration:none; }
+        .product-title :global(a:hover){ color:#7c3aed; }
 
         .spec-columns{ display:grid; grid-template-columns:1fr 1fr; gap:0 16px; margin-top:4px; }
         @media (max-width:340px){ .spec-columns{ grid-template-columns:1fr; } }
-
         .spec-col{ list-style:none; margin:0; padding:0; }
         .spec-row{ display:block; padding:5px 0; border-bottom:1px dashed rgba(17,24,39,.06); }
         .spec-row:last-child{ border-bottom:0; }
+        .spec-value{ font-size:12.5px; font-weight:500; color:#374151; line-height:1.28; letter-spacing:.005em; }
 
-        .spec-value{ font-family: var(--detail-font); font-size: 12.5px; font-weight: 500; color:#374151; line-height: 1.28; letter-spacing: .005em; white-space: normal; word-break: break-word; }
-
-        .price-wrapper{display:none}
+        .price-wrapper{ display:none; }
       `}</style>
     </div>
   );

@@ -1,20 +1,21 @@
 'use client';
 
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-/* import PriceFilter from "../shop/shop-filter/price-filter";
-import StatusFilter from "../shop/shop-filter/status-filter"; */
-import {
-  handleFilterSidebarClose,
-  // handleFilterSidebarOpen,  // not needed for the Close button
-} from '@/redux/features/shop-filter-slice';
+import { handleFilterSidebarClose } from '@/redux/features/shop-filter-slice';
 import ResetButton from '../shop/shop-filter/reset-button';
-import ShopSidebarFilters from '../shop/ShopSidebarFilters';
+import ShopSidebarFilters, {
+  FilterOnly as MobileFilterFlyout,
+  FILTERS_MAP,
+} from '../shop/ShopSidebarFilters';
 
 const ShopFilterOffCanvas = ({ all_products, otherProps, right_side = false }) => {
   const { priceFilterValues, selectedFilters, handleFilterChange } = otherProps;
   const { filterSidebar } = useSelector((state) => state.shopFilter);
   const dispatch = useDispatch();
+
+  const wrapperRef = useRef(null);            // <-- portal target for mobile flyout
+  const [singleKey, setSingleKey] = useState(null);
 
   // max price (for ResetButton props)
   const maxPrice = all_products.reduce((max, product) => {
@@ -22,8 +23,7 @@ const ShopFilterOffCanvas = ({ all_products, otherProps, right_side = false }) =
     return val > max ? val : max;
   }, 0);
 
-  // 🔑 Wrap the filter change to also close the panel
-  const onFilterChangeAndClose = (nextSelected) => {
+  const applyAndClose = (nextSelected) => {
     handleFilterChange(nextSelected);
     dispatch(handleFilterSidebarClose());
   };
@@ -31,12 +31,14 @@ const ShopFilterOffCanvas = ({ all_products, otherProps, right_side = false }) =
   return (
     <>
       <div className={`tp-filter-offcanvas-area ${filterSidebar ? 'offcanvas-opened' : ''}`}>
-        <div className="tp-filter-offcanvas-wrapper">
+        <div className="tp-filter-offcanvas-wrapper" ref={wrapperRef}>
           <div className="tp-filter-offcanvas-close">
             <button
               type="button"
-              // ✅ actually CLOSE on click
-              onClick={() => dispatch(handleFilterSidebarClose())}
+              onClick={() => {
+                if (singleKey) { setSingleKey(null); return; } // back to list if viewing a single filter
+                dispatch(handleFilterSidebarClose());
+              }}
               className="tp-filter-offcanvas-close-btn filter-close-btn"
               aria-label="Close filters"
               title="Close"
@@ -45,26 +47,36 @@ const ShopFilterOffCanvas = ({ all_products, otherProps, right_side = false }) =
             </button>
           </div>
 
-          <div className="tp-shop-sidebar">
-            {/* Price filter (kept commented) */}
-            {/* <PriceFilter priceFilterValues={priceFilterValues} maxPrice={maxPrice} /> */}
+          <div className="tp-shop-sidebar" style={{ position: 'relative' }}>
+            {singleKey ? (
+              <MobileFilterFlyout
+                filter={FILTERS_MAP[singleKey]}
+                selected={selectedFilters}
+                onApply={(nextSelected) => {
+                  applyAndClose(nextSelected);
+                  setSingleKey(null);
+                }}
+                onCancel={() => setSingleKey(null)}
+                portalTarget={wrapperRef.current /* mount INSIDE drawer */}
+              />
+            ) : (
+              <>
+                <ShopSidebarFilters
+                  selected={selectedFilters}
+                  onFilterChange={applyAndClose}
+                  mobile
+                  mobileSingle
+                  onOpenFilter={(key) => setSingleKey(key)}
+                />
 
-            {/* Status filter (kept commented) */}
-            {/* <StatusFilter setCurrPage={setCurrPage} shop_right={right_side} /> */}
-
-            {/* Main filters — will close drawer after any change */}
-            <ShopSidebarFilters
-              selected={selectedFilters}
-              onFilterChange={onFilterChangeAndClose}
-            />
-
-            {/* Reset filter — also closes drawer after reset */}
-            <ResetButton
-              shop_right={right_side}
-              setPriceValues={priceFilterValues?.setPriceValue}
-              maxPrice={maxPrice}
-              handleFilterChange={onFilterChangeAndClose}
-            />
+                <ResetButton
+                  shop_right={right_side}
+                  setPriceValues={priceFilterValues?.setPriceValue}
+                  maxPrice={maxPrice}
+                  handleFilterChange={applyAndClose}
+                />
+              </>
+            )}
           </div>
         </div>
       </div>

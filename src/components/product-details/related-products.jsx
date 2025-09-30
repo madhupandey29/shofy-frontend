@@ -1,108 +1,171 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable no-unused-vars */
 'use client';
 
 import React from 'react';
-import { Swiper, SwiperSlide } from 'swiper/react';
-import { Navigation, Autoplay } from 'swiper/modules';
+import Link from 'next/link';
+import Image from 'next/image';
 
 import { useGetGroupCodeProductsQuery } from '@/redux/features/newProductApi';
-import ProductItem from '../products/fashion/product-item';
 import ErrorMsg from '../common/error-msg';
 import { HomeNewArrivalPrdLoader } from '../loader';
 
-// slider setting
-const slider_setting = {
-  slidesPerView: 4,
-  spaceBetween: 24,
-  navigation: {
-    nextEl: '.tp-related-slider-button-next',
-    prevEl: '.tp-related-slider-button-prev',
-  },
-  autoplay: { delay: 5000 },
-  breakpoints: {
-    1200: { slidesPerView: 4 },
-    992:  { slidesPerView: 3 },
-    768:  { slidesPerView: 2 },
-    576:  { slidesPerView: 2 },
-    0:    { slidesPerView: 1 },
-  },
-};
-
-/**
- * Normalize a "groupcode relation" record into a product-like object that ProductItem understands.
- * - If `rel.product` is populated, merge it over the relation and keep relation-level prices as fallbacks.
- * - Ensure `_id`, `slug`, and `category` are present in predictable shapes.
- * - If only IDs are present, provide safe placeholders; ProductItem will still pull SEO data.
- */
+/** Normalize relation -> product */
 const normalizeRelationToProduct = (rel) => {
   if (!rel) return null;
 
-  // If rel.product is a populated object:
   if (rel.product && typeof rel.product === 'object') {
     const merged = { ...rel, ...rel.product };
-
-    // Prefer ids/slugs from the nested product
-    merged._id  = rel.product._id  || rel._id;
+    merged._id = rel.product._id || rel._id;
     merged.slug = rel.product.slug || rel.slug;
 
-    // Ensure category has an object shape `{ _id, name }`
     if (rel.product.category && typeof rel.product.category === 'object') {
       merged.category = rel.product.category;
     } else if (typeof rel.product.category === 'string') {
       merged.category = { _id: rel.product.category, name: '' };
     }
 
-    // Keep relation-level prices as fallbacks if product-level are missing
     if (rel.salesPrice != null && merged.salesPrice == null) merged.salesPrice = rel.salesPrice;
-    if (rel.price      != null && merged.price      == null) merged.price      = rel.price;
+    if (rel.price != null && merged.price == null) merged.price = rel.price;
 
     return merged;
   }
 
-  // Not populated: just pass through with safe fallbacks so ProductItem can still use SEO
   return {
     ...rel,
     _id: rel.product || rel._id,
-    // give category a safe object shape if it exists only as an id
     category: rel.category ? { _id: rel.category, name: '' } : undefined,
   };
 };
 
-const RelatedProducts = ({ id, groupcodeId }) => {
-  const { data, isError, isLoading } =
-    useGetGroupCodeProductsQuery(groupcodeId, { skip: !groupcodeId });
+const FALLBACK_IMG =
+  'https://res.cloudinary.com/demo/image/upload/v1690000000/placeholder-square.webp';
 
-  let content = null;
+const RelatedProducts = ({ groupcodeId }) => {
+  const shouldSkip = !groupcodeId || String(groupcodeId).trim() === '';
+  const { data, isError, isLoading } = useGetGroupCodeProductsQuery(
+    shouldSkip ? '' : groupcodeId,
+    { skip: shouldSkip }
+  );
 
-  if (!groupcodeId) {
-    content = <ErrorMsg msg="No group code available for related products" />;
-  } else if (isLoading) {
-    content = <HomeNewArrivalPrdLoader loading={isLoading} />;
-  } else if (isError) {
-    content = <ErrorMsg msg="There was an error" />;
-  } else if (!data || !data.data || data.data.length === 0) {
-    content = <ErrorMsg msg="No Products found!" />;
-  } else {
-    // Normalize every relation to a product-like object
-    const items = data.data.map(normalizeRelationToProduct).filter(Boolean);
+  if (shouldSkip) return <ErrorMsg msg="No group code available for related products" />;
+  if (isLoading) return <HomeNewArrivalPrdLoader loading />;
+  if (isError) return <ErrorMsg msg="There was an error" />;
 
-    content = (
-      <Swiper
-        {...slider_setting}
-        modules={[Autoplay, Navigation]}
-        className="tp-product-related-slider-active swiper-container mb-10"
-      >
-        {items.slice(0, 6).map((item) => (
-          <SwiperSlide key={item._id}>
-            <ProductItem product={item} primary_style />
-          </SwiperSlide>
-        ))}
-      </Swiper>
-    );
-  }
+  const list = (data?.data ?? []).map(normalizeRelationToProduct).filter(Boolean);
+  if (!list.length) return <ErrorMsg msg="No Products found!" />;
 
-  return <div className="tp-product-related-slider">{content}</div>;
+  return (
+    <div className="tp-related-grid">
+      <div className="row g-3 g-md-4">
+        {list.map((p) => {
+          const href = p?.slug ? `/fabric/${p.slug}` : '#';
+          const imgSrc =
+            p?.img || p?.image || p?.image1 || p?.imageURLs?.[0]?.url || FALLBACK_IMG;
+
+          return (
+            <div key={p._id} className="col-6 col-sm-4 col-md-3 col-lg-2">
+              <Link href={href} className="card-mini">
+                <div className="thumb">
+                  <Image src={imgSrc} alt={p?.name || 'Product'} fill sizes="200px" />
+                  <span className="thumb-gloss" />
+                </div>
+                <div className="meta">
+                  <h4 className="title" title={p?.name}>
+                    {p?.name || 'Untitled Product'}
+                  </h4>
+                </div>
+              </Link>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Scoped styles for this section only */}
+      <style jsx>{`
+        /* Card base */
+        .card-mini {
+          --radius: 14px;
+          --shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
+          --shadow-hover: 0 8px 20px rgba(0, 0, 0, 0.14);
+
+          display: flex;
+          flex-direction: column;
+          height: 100%;
+          border-radius: var(--radius);
+          background: #fff;
+          text-decoration: none;
+          color: inherit;
+          border: 1px solid #ececec;
+          box-shadow: var(--shadow);
+          transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+          overflow: hidden;
+        }
+        .card-mini:hover {
+          transform: translateY(-3px);
+          box-shadow: var(--shadow-hover);
+          border-color: #e2e2e2;
+        }
+
+        /* Image area */
+        .thumb {
+          position: relative;
+          width: 100%;
+          aspect-ratio: 1 / 1;          /* perfect square */
+          overflow: hidden;
+          background: #f6f7f9;
+        }
+        .thumb :global(img) {
+          object-fit: cover;
+          transform: scale(1);
+          transition: transform 220ms ease;
+        }
+        .card-mini:hover .thumb :global(img) {
+          transform: scale(1.04);       /* subtle zoom on hover */
+        }
+
+        /* gentle gloss to make images feel premium (like your second ss) */
+        .thumb-gloss {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.22) 0%,
+            rgba(255, 255, 255, 0.0) 28%,
+            rgba(0, 0, 0, 0.03) 100%
+          );
+          pointer-events: none;
+        }
+
+        /* Title block */
+        .meta {
+          padding: 10px 12px;
+          border-top: 1px solid #f0f0f0;
+          display: flex;
+          align-items: center;
+          min-height: 54px;             /* consistent height */
+        }
+        .title {
+          margin: 0;
+          font-size: 15px;              /* a touch larger, more readable */
+          font-weight: 600;
+          line-height: 1.25;
+          letter-spacing: 0.2px;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;        /* show up to two lines */
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        /* Tighten the horizontal rhythm of the grid so gaps look unified */
+        .tp-related-grid :global(.row) {
+          margin-left: 0;
+          margin-right: 0;
+        }
+      `}</style>
+    </div>
+  );
 };
 
 export default RelatedProducts;

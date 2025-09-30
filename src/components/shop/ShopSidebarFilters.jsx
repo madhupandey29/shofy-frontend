@@ -1,427 +1,605 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import { useGetFilterOptionsQuery } from '@/redux/api/apiSlice';
+import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useGetFilterOptionsQuery } from "@/redux/api/apiSlice";
 
-/* ------------------ Config & helpers ------------------ */
+/* ------------------ Config ------------------ */
 const FILTERS = [
-  { key: 'category',     label: 'Category',     api: 'category/' },
-  { key: 'color',        label: 'Color',        api: 'color/' },
-  { key: 'content',      label: 'Content',      api: 'content/' },
-  { key: 'design',       label: 'Design',       api: 'design/' },
+  { key: "category",    label: "Category",     api: "category/" },
+  { key: "color",       label: "Color",        api: "color/" },
+  { key: "content",     label: "Content",      api: "content/" },
+  { key: "design",      label: "Design",       api: "design/" },
 
-  { key: 'structure',    label: 'Structure',    api: 'structure/',
-    sub: { key: 'substructure', label: 'Sub-structure', api: 'substructure/' } },
+  { key: "structure",   label: "Structure",    api: "structure/",
+    sub: { key: "substructure", label: "Sub-structure", api: "substructure/" } },
 
-  { key: 'finish',       label: 'Finish',       api: 'finish/',
-    sub: { key: 'subfinish', label: 'Sub-finish', api: 'subfinish/' } },
+  { key: "finish",      label: "Finish",       api: "finish/",
+    sub: { key: "subfinish", label: "Sub-finish", api: "subfinish/" } },
 
-  { key: 'suitablefor',  label: 'Suitable For', api: 'suitablefor/',
-    sub: { key: 'subsuitable', label: 'Sub-suitable', api: 'subsuitable/' } },
+  { key: "suitablefor", label: "Suitable For", api: "suitablefor/",
+    sub: { key: "subsuitable", label: "Sub-suitable", api: "subsuitable/" } },
 
-  { key: 'motifsize',    label: 'Motif Size',   api: 'motif/' },
+  { key: "motifsize",   label: "Motif Size",   api: "motif/" },
 ];
+
+export const FILTERS_MAP = Object.fromEntries(FILTERS.map(f => [f.key, f]));
 
 const getOptions = (d = []) =>
   (Array.isArray(d) ? d : d?.data ?? d?.results ?? d?.items ?? d?.docs ?? []);
+
 const getNameAndValue = (o) => {
-  const value = o?._id ?? o?.id ?? o?.value ?? o?.slug ?? o?.name;
-  const name  = o?.name ?? o?.parent ?? o?.title ?? String(value);
-  return { value: String(value), name: String(name) };
+  const v = o?._id ?? o?.id ?? o?.value ?? o?.slug ?? o?.name;
+  const n = o?.name ?? o?.parent ?? o?.title ?? String(v);
+  return { value: String(v), name: String(n) };
 };
 
 /* =======================================================
-   MAIN
+   Sidebar wrapper
 ======================================================= */
-const ShopSidebarFilters = ({ onFilterChange, selected = {}, hideTitle = false }) => {
+export default function ShopSidebarFilters({
+  onFilterChange,
+  selected = {},
+  hideTitle = false,
+
+  // used by mobile off-canvas to show only one filter screen
+  mobile = false,
+  mobileSingle = false,
+  onOpenFilter, // (key) => void
+}) {
   const sidebarRef = useRef(null);
-  const [activePanel, setActivePanel] = useState(null);
-  const [panelPos, setPanelPos] = useState({ left: 420, top: 80, maxHeight: 560 });
+  const [active, setActive] = useState(null);
+  const [pos, setPos] = useState({ left: 420, top: 80, maxHeight: 560 });
 
-  // Measure left from sidebar; top comes from clicked row
+  // align flyout to right of sidebar
   const measureLeft = () => {
-    const el = sidebarRef.current;
-    const rect = el?.getBoundingClientRect();
-    if (rect) {
-      const left = Math.round(rect.right + 24);
-      setPanelPos((p) => ({ ...p, left }));
-    }
+    const r = sidebarRef.current?.getBoundingClientRect();
+    if (!r) return;
+    setPos((p) => ({ ...p, left: Math.round(r.right + 24) }));
   };
-
   useEffect(() => {
     measureLeft();
     const onResize = () => measureLeft();
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  // body lock + ESC close
+  // lock body + ESC to close
   useEffect(() => {
-    if (!activePanel) return;
+    if (!active) return;
     const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    const onKey = (e) => e.key === 'Escape' && setActivePanel(null);
-    window.addEventListener('keydown', onKey);
+    document.body.style.overflow = "hidden";
+    const onKey = (e) => e.key === "Escape" && setActive(null);
+    window.addEventListener("keydown", onKey);
     return () => {
       document.body.style.overflow = prev;
-      window.removeEventListener('keydown', onKey);
+      window.removeEventListener("keydown", onKey);
     };
-  }, [activePanel]);
+  }, [active]);
 
-  // open panel and align vertically just BELOW the clicked row
+  // open flyout aligned just under clicked row (desktop)
   const openFor = (filter, rowEl) => {
-    const rect = rowEl?.getBoundingClientRect?.();
-    const margin = 16;                              // viewport padding
-    const idealTop = rect ? rect.top + 12 : 32;     // nudge down like your ref
+    // mobile single-screen mode: delegate to parent
+    if (mobile && mobileSingle) {
+      onOpenFilter?.(filter.key);
+      return;
+    }
+    const r = rowEl?.getBoundingClientRect?.();
+    const margin = 16;
+    const idealTop = r ? r.top + 12 : 32;
     const maxH = window.innerHeight - margin * 2;
-    const clampedTop = Math.max(margin, Math.min(idealTop, window.innerHeight - margin - 400));
-    setPanelPos((p) => ({ ...p, top: clampedTop, maxHeight: maxH }));
-    setActivePanel(filter);
+    const clampedTop = Math.max(margin, Math.min(idealTop, window.innerHeight - margin - 420));
+    setPos((p) => ({ ...p, top: clampedTop, maxHeight: maxH }));
+    setActive(filter);
   };
 
-  const handleTick = (filterKey, value) => {
-    const cur  = Array.isArray(selected[filterKey]) ? selected[filterKey] : [];
-    const next = cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value];
-    onFilterChange({ ...selected, [filterKey]: next });
-  };
-
-  const clearSection = (filterKey) => {
+  const clearKey = (key) => {
     const next = { ...selected };
-    delete next[filterKey];
+    delete next[key];
     onFilterChange(next);
   };
 
   return (
-    <div className="tp-shop-sidebar sidebar-card" ref={sidebarRef}>
-      {!hideTitle && <h3 className="sidebar-title">Filter</h3>}
+    <div className="sidebar-card" ref={sidebarRef}>
+      {!hideTitle && <h3 className="sidebar-title">Filters</h3>}
       <div className="sidebar-scroll">
         {FILTERS.map((f) => {
           const count = Array.isArray(selected[f.key]) ? selected[f.key].length : 0;
           return (
-            <div key={f.key} className="tp-shop-widget">
-              <button
-                type="button"
-                className="filter-row"
-                onClick={(e) => openFor(f, e.currentTarget)}
-                aria-haspopup="dialog"
-                aria-expanded={!!activePanel && activePanel.key === f.key}
-              >
-                <span className="filter-row__label">{f.label}</span>
-                <span className="filter-row__actions">
-                  {!!count && <span className="pill-count">{count}</span>}
-                  <Chevron right />
-                </span>
-              </button>
-            </div>
+            <button
+              key={f.key}
+              type="button"
+              className="filter-row"
+              onClick={(e) => openFor(f, e.currentTarget)}
+              aria-haspopup="dialog"
+              aria-expanded={!!active && active.key === f.key}
+            >
+              <span className="filter-row__label">{f.label}</span>
+              <span className="filter-row__actions">
+                {!!count && <span className="pill-count">{count}</span>}
+                <ChevronRight />
+              </span>
+            </button>
           );
         })}
       </div>
 
-      {activePanel && (
+      {active && (
         <FilterFlyout
-          anchorLeft={panelPos.left}
-          anchorTop={panelPos.top}
-          maxHeight={panelPos.maxHeight}
-          filter={activePanel}
+          anchorLeft={pos.left}
+          anchorTop={pos.top}
+          maxHeight={pos.maxHeight}
+          filter={active}
           selected={selected}
-          onTick={handleTick}
-          onClear={() => clearSection(activePanel.key)}
-          onClose={() => setActivePanel(null)}
+          onClear={() => clearKey(active.key)}
+          onClose={() => setActive(null)}
+          applyDraft={(next) => { onFilterChange(next); }}
         />
       )}
 
       <style jsx global>{`
         .sidebar-card{
           --ink:#0f172a; --muted:#6b7280; --line:rgba(15,23,42,.12);
-          background:#fff; border:1px solid var(--line); border-radius:16px;
-          padding:16px; box-shadow:0 1px 2px rgba(0,0,0,.04);
-          font-family: 'Jost', system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+          --font:'Inter',system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+          background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px;
+          box-shadow:0 1px 2px rgba(0,0,0,.04);font-family:var(--font);
         }
-        .sidebar-title{ margin:4px 4px 12px; font:700 16px/1.2 'Jost', system-ui, sans-serif; color:var(--ink); }
-        .sidebar-scroll{
-          max-height: calc(100vh - var(--header-offset, 88px) - 110px);
-          overflow:auto; padding-right:6px;
-        }
-        .sidebar-scroll::-webkit-scrollbar{ width:10px; }
-        .sidebar-scroll::-webkit-scrollbar-thumb{ background:#e5e7eb; border-radius:8px; }
+        .sidebar-title{margin:4px 4px 12px;font:600 16px/1.2 var(--font);color:#0f172a;}
+        .sidebar-scroll{max-height:calc(100vh - 110px);overflow:auto;padding-right:6px;}
+        .sidebar-scroll::-webkit-scrollbar{width:10px;}
+        .sidebar-scroll::-webkit-scrollbar-thumb{background:#e5e7eb;border-radius:8px;}
         .filter-row{
-          width:100%; display:flex; align-items:center; justify-content:space-between;
-          padding:12px 12px; margin:8px 0 6px;
-          border:1px solid var(--line); border-radius:12px; background:#fff;
-          cursor:pointer; transition:background .15s, border-color .15s, transform .12s ease;
+          width:100%;display:flex;align-items:center;justify-content:space-between;
+          padding:12px 12px;margin:8px 0 6px;border:1px solid var(--line);
+          border-radius:12px;background:#fff;cursor:pointer;
+          transition:background .15s,border-color .15s,transform .12s ease;
         }
-        .filter-row:hover{ background:#f9fafb; border-color:rgba(15,23,42,.18); transform:translateY(-1px); }
-        .filter-row__label{ font:700 15px/1.2 'Jost', system-ui, sans-serif; color:#0f172a; }
-        .filter-row__actions{ display:flex; align-items:center; gap:10px; }
-        .pill-count{ min-width:24px; height:22px; padding:0 8px; border-radius:999px; background:#0b1b2b; color:#fff; font:700 12px/22px 'Jost', system-ui, sans-serif; text-align:center; }
+        .filter-row:hover{background:#f9fafb;border-color:rgba(15,23,42,.18);transform:translateY(-1px);}
+        .filter-row__label{font:600 15px/1.2 var(--font);color:#0f172a;}
+        .filter-row__actions{display:flex;align-items:center;gap:10px;}
+        .pill-count{
+          min-width:22px;height:20px;padding:0 6px;border-radius:999px;background:#fee2e2;color:#b91c1c;
+          font:700 12px/20px var(--font);text-align:center;
+        }
       `}</style>
     </div>
   );
-};
+}
 
 /* =======================================================
-   Flyout Panel (search removed; smooth animations)
+   Flyout with draft + Confirm
+   (exported so OffCanvas can reuse this exact UI on mobile)
 ======================================================= */
-const FilterFlyout = ({ anchorLeft, anchorTop, maxHeight, filter, selected, onTick, onClear, onClose }) => {
+export function FilterFlyout({
+  anchorLeft, anchorTop, maxHeight,
+  filter, selected, onClear, onClose,
+  applyDraft,
+  centered = false,            // when true show centered modal
+  portalTarget = undefined,    // mount here instead of document.body
+}) {
   const panelRef = useRef(null);
-  const [ddOpen, setDdOpen] = useState(false);   // dropdown open/close
-  const [subOpen, setSubOpen] = useState(false);
-  const [mounted, setMounted] = useState(false); // for entrance animation
+  const footerRef = useRef(null);  // measure footer top
+
+  // draft state (applied on Confirm)
+  const [draft, setDraft] = useState(() => {
+    const obj = {};
+    obj[filter.key] = (Array.isArray(selected[filter.key]) ? selected[filter.key] : []).map(String);
+    if (filter.sub?.key) {
+      obj[filter.sub.key] = (Array.isArray(selected[filter.sub.key]) ? selected[filter.sub.key] : []).map(String);
+    }
+    return obj;
+  });
+
+  // dropdown state
+  const triggerMainRef = useRef(null);
+  const [openMain, setOpenMain] = useState(false);
+  const [maxHMain, setMaxHMain] = useState(320);
+
+  const hasSub = !!filter.sub;
+  const triggerSubRef = useRef(null);
+  const [openSub, setOpenSub] = useState(false);
+  const [maxHSub, setMaxHSub] = useState(320);
 
   const { data, isLoading, error } = useGetFilterOptionsQuery(filter.api, { skip: !filter });
   const options = getOptions(data);
+  const { data: subData, isLoading: subLoading, error: subError } =
+    useGetFilterOptionsQuery(filter.sub?.api, { skip: !hasSub });
+  const subOptions = getOptions(subData);
 
-  // click outside closes panel
+  // click outside closes flyout
   useEffect(() => {
     const onDown = (e) => {
       if (!panelRef.current) return;
       if (!panelRef.current.contains(e.target)) onClose();
     };
-    document.addEventListener('mousedown', onDown);
-    setMounted(true);
-    return () => document.removeEventListener('mousedown', onDown);
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
   }, [onClose]);
 
-  const selectedArr = Array.isArray(selected[filter.key]) ? selected[filter.key] : [];
-  const toggleDropdown = () => setDdOpen((v) => !v);
-  const ddMaxHeight = 320;
+  // dropdown max-height limited to footer top (Confirm always visible)
+  const computeMaxHeight = (ref, setter) => {
+    const r = ref.current?.getBoundingClientRect();
+    const fr = footerRef.current?.getBoundingClientRect();
+    if (!r || !fr) return;
+    const spaceToFooter = Math.floor(fr.top - r.bottom - 12);
+    const desired = 420;
+    const clamped = Math.max(160, Math.min(desired, spaceToFooter));
+    setter(clamped);
+  };
+  useEffect(() => {
+    if (openMain) {
+      computeMaxHeight(triggerMainRef, setMaxHMain);
+      const f = () => computeMaxHeight(triggerMainRef, setMaxHMain);
+      window.addEventListener("resize", f);
+      window.addEventListener("scroll", f, { passive: true });
+      return () => { window.removeEventListener("resize", f); window.removeEventListener("scroll", f); };
+    }
+  }, [openMain]);
+  useEffect(() => {
+    if (openSub) {
+      computeMaxHeight(triggerSubRef, setMaxHSub);
+      const f = () => computeMaxHeight(triggerSubRef, setMaxHSub);
+      window.addEventListener("resize", f);
+      window.addEventListener("scroll", f, { passive: true });
+      return () => { window.removeEventListener("resize", f); window.removeEventListener("scroll", f); };
+    }
+  }, [openSub]);
+
+  // draft toggle
+  const toggleDraft = (key, rawValue) => {
+    const value = String(rawValue);
+    setDraft((d) => {
+      const cur = new Set(d[key] || []);
+      if (cur.has(value)) cur.delete(value); else cur.add(value)
+      return { ...d, [key]: [...cur] };
+    });
+  };
+
+  const valuesMain = draft[filter.key] || [];
+  const valuesSub  = filter.sub?.key ? (draft[filter.sub.key] || []) : [];
+
+  const toggleMain = () => setOpenMain((v) => !v);
+  const toggleSub  = () => setOpenSub((v) => !v);
+
+  const panelStyle = centered
+    ? {
+        position: "absolute",
+        left: "50%",
+        transform: "translateX(-50%)",
+        top: "12vh",
+        width: 520,
+        maxWidth: "92vw",
+        maxHeight: "76vh",
+        background: "#fff",
+        borderRadius: 18,
+        boxShadow: "0 22px 56px rgba(0,0,0,.16)",
+        zIndex: 41,
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+        fontFamily: "Inter, system-ui",
+      }
+    : {
+        position:"fixed",
+        left: Math.max(12, anchorLeft),
+        top: anchorTop,
+        width: 520,
+        maxWidth: "92vw",
+        maxHeight,
+        background:"#fff",
+        borderRadius:18,
+        boxShadow:"0 22px 56px rgba(0,0,0,.16)",
+        zIndex: 41,
+        display:"flex",
+        flexDirection:"column",
+        overflow:"hidden",
+        fontFamily: 'Inter, system-ui'
+      };
+
+  const Backdrop = (
+    <div
+      style={{
+        position: centered ? "absolute" : "fixed",
+        inset: 0,
+        background: "rgba(15,23,42,.08)",
+        backdropFilter: "saturate(120%) blur(1px)",
+        zIndex: 40,
+      }}
+    />
+  );
+
+  const Panel = (
+    <div ref={panelRef} role="dialog" aria-modal="true" className="filter-panel enter" style={panelStyle}>
+      {/* Header */}
+      <div style={{ padding:"18px 22px 12px", borderBottom:"1px solid rgba(15,23,42,.08)", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+        <div style={{ fontWeight:700, fontSize:16 }}>{filter.label}</div>
+        <button onClick={onClose} className="x-btn" aria-label="Close">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="#b91c1c" strokeWidth="2" strokeLinecap="round"/></svg>
+        </button>
+      </div>
+
+      {/* Body */}
+      <div style={{ padding:"16px 22px 12px" }}>
+        {/* Main label */}
+{/*         <div style={{ fontWeight:600, color:"#64748b", fontSize:14, marginBottom:8 }}>{filter.label}</div>
+ */}
+        {/* Main select trigger */}
+        <button
+          ref={triggerMainRef}
+          type="button"
+          className="select-trigger"
+          aria-haspopup="listbox"
+          aria-expanded={openMain}
+          onClick={toggleMain}
+          style={{
+            width:"100%", textAlign:"left",
+            border:"1px solid rgba(15,23,42,.18)", borderRadius:12, padding:"12px 14px",
+            display:"flex", alignItems:"center", justifyContent:"space-between",
+            background:"#fff", cursor:"pointer", transition:"box-shadow .15s,border-color .15s"
+          }}
+        >
+          <span style={{ color: valuesMain.length ? "#0f172a" : "#94a3b8", fontWeight:600 }}>
+            {valuesMain.length ? `${valuesMain.length} selected` : `Select ${filter.label}`}
+          </span>
+          <ChevronDown className={openMain ? "rot" : ""}/>
+        </button>
+
+        {/* Main dropdown menu (portal) */}
+        {openMain && (
+          <DropdownPortal anchorRef={triggerMainRef} maxHeight={maxHMain} portalTarget={portalTarget}>
+            <MenuContent
+              options={options}
+              isLoading={isLoading}
+              error={error}
+              values={valuesMain}
+              onPick={(value) => {
+                toggleDraft(filter.key, value);           // toggle instantly
+                setTimeout(() => setOpenMain(false), 1520); // smooth close
+              }}
+            />
+          </DropdownPortal>
+        )}
+
+        {/* Sub section */}
+        {hasSub && (
+          <div style={{ marginTop:16 }}>
+{/*             <div style={{ fontWeight:600, color:"#64748b", fontSize:14, marginBottom:8 }}>{filter.sub.label}</div>
+ */}
+            <button
+              ref={triggerSubRef}
+              type="button"
+              className="select-trigger"
+              aria-haspopup="listbox"
+              aria-expanded={openSub}
+              onClick={toggleSub}
+              style={{
+                width:"100%", textAlign:"left",
+                border:"1px solid rgba(15,23,42,.18)", borderRadius:12, padding:"12px 14px",
+                display:"flex", alignItems:"center", justifyContent:"space-between",
+                background:"#fff", cursor:"pointer", transition:"box-shadow .15s,border-color .15s"
+              }}
+            >
+              <span style={{ color: valuesSub.length ? "#0f172a" : "#94a3b8", fontWeight:600 }}>
+                {valuesSub.length ? `${valuesSub.length} selected` : `Select ${filter.sub.label}`}
+              </span>
+              <ChevronDown className={openSub ? "rot" : ""}/>
+            </button>
+
+            {openSub && (
+              <DropdownPortal anchorRef={triggerSubRef} maxHeight={maxHSub} >
+                <MenuContent
+                  options={subOptions}
+                  isLoading={subLoading}
+                  error={subError}
+                  values={valuesSub}
+                  onPick={(value) => {
+                    toggleDraft(filter.sub.key, value);
+                    setTimeout(() => setOpenSub(false), 1520);
+                  }}
+                />
+              </DropdownPortal>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Footer (always visible; dropdown height respects this) */}
+      <div
+        ref={footerRef}
+        style={{
+          marginTop:"auto",
+          padding:"14px 22px",
+          borderTop:"1px solid rgba(15,23,42,.08)",
+          display:"flex",
+          gap:12,
+          position:"relative",
+          zIndex:120,
+          background:"#fff"
+        }}
+      >
+        <button type="button" onClick={onClear} className="link-clear">Clear</button>
+        <button
+          type="button"
+          onClick={() => {
+            const merged = { ...selected, ...draft };
+            if (Array.isArray(merged[filter.key]) && merged[filter.key].length === 0) delete merged[filter.key];
+            if (filter.sub?.key && Array.isArray(merged[filter.sub.key]) && merged[filter.sub.key].length === 0) delete merged[filter.sub.key];
+            applyDraft?.(merged);
+            onClose();
+          }}
+          className="btn-confirm"
+        >
+          Confirm
+        </button>
+      </div>
+    </div>
+  );
+
+  const portalNode = portalTarget ?? document.body;
 
   return createPortal(
     <>
-      {/* Dim backdrop */}
-      <div style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.08)', backdropFilter:'saturate(120%) blur(1px)', zIndex: 40 }} />
-
-      {/* Panel */}
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        className={`filter-panel ${mounted ? 'enter' : ''}`}
-        style={{
-          position:'fixed',
-          left: Math.max(12, anchorLeft),
-          top: anchorTop,
-          width: 500,
-          maxWidth: '92vw',
-          maxHeight,
-          background:'#fff',
-          borderRadius:16,
-          boxShadow:'0 20px 50px rgba(0,0,0,.15)',
-          zIndex: 41,
-          display:'flex',
-          flexDirection:'column',
-          overflow:'hidden'
-        }}
-      >
-        {/* Header */}
-        <div style={{ padding:'18px 20px 12px', borderBottom:'1px solid rgba(15,23,42,.08)', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-          <div style={{ fontWeight:700, fontSize:16 }}>{filter.label}</div>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="x-btn"
-            title="Close"
-          >
-            {/* small close icon */}
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-              <path d="M6 6l12 12M18 6L6 18" stroke="#b91c1c" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
-          </button>
-        </div>
-
-        {/* Body */}
-        <div style={{ padding:'16px 20px 12px' }}>
-          <div style={{ fontWeight:700, color:'#64748b', fontSize:14, marginBottom:8 }}>{filter.label}</div>
-
-          {/* SELECT-like control */}
-          <div
-            className={`fake-select ${ddOpen ? 'open' : ''}`}
-            onClick={toggleDropdown}
-            aria-expanded={ddOpen}
-            style={{
-              position:'relative',
-              border:'1px solid rgba(15,23,42,.18)', borderRadius:12,
-              padding:'12px 14px',
-              display:'flex', alignItems:'center', justifyContent:'space-between',
-              cursor:'pointer', background:'#fff'
-            }}
-          >
-            <span style={{ color:selectedArr.length ? '#0f172a' : '#94a3b8' }}>
-              {selectedArr.length ? `${selectedArr.length} selected` : `Select ${filter.label}`}
-            </span>
-            <Chevron down className={`chev-rot ${ddOpen ? 'rot' : ''}`} />
-
-            {/* Dropdown list */}
-            {ddOpen && (
-              <div
-                className="dropdown-anim"
-                style={{
-                  position:'absolute', left:0, right:0, top:'calc(100% + 8px)',
-                  background:'#fff', border:'1px solid rgba(15,23,42,.12)', borderRadius:12,
-                  boxShadow:'0 10px 30px rgba(0,0,0,.12)', zIndex: 42
-                }}
-              >
-                <div style={{ maxHeight: ddMaxHeight, overflow:'auto', padding:'6px 8px 8px' }}>
-                  {isLoading && <div className="small text-muted" style={{ padding:'10px' }}>Loading…</div>}
-                  {error && <div className="small text-danger" style={{ padding:'10px' }}>Error loading</div>}
-                  {!isLoading && !error && options.map((o) => {
-                    const { value, name } = getNameAndValue(o);
-                    const checked = selectedArr.includes(value);
-                    return (
-                      <label key={value} className="option-item" style={{ margin:'2px 4px' }}>
-                        <input type="checkbox" checked={checked} onChange={() => onTick(filter.key, value)} />
-                        <span className="label">{name}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Optional sub-filter */}
-          {filter.sub && (
-            <div style={{ marginTop:14 }}>
-              <div className="sub-head" style={{ cursor:'pointer' }} onClick={() => setSubOpen(v => !v)}>
-                <span>{filter.sub.label}</span>
-                <Chevron right className={subOpen ? 'chev-rot rot' : 'chev-rot'} />
-              </div>
-              {subOpen && (
-                <div className="sub-body">
-                  <SubFilter
-                    api={filter.sub.api}
-                    filterKey={filter.sub.key}
-                    selected={selected[filter.sub.key] ?? []}
-                    onSelect={onTick}
-                  />
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div style={{ marginTop:'auto', padding:'14px 20px', borderTop:'1px solid rgba(15,23,42,.08)', display:'flex', gap:12 }}>
-          <button
-            type="button"
-            onClick={onClear}
-            className="link-clear"
-          >
-            Clear
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="btn-confirm"
-          >
-            Confirm
-          </button>
-        </div>
-      </div>
-
-      {/* cosmetics & animations */}
+      {Backdrop}
+      {Panel}
       <style jsx global>{`
-        .x-btn{ border:0; background:transparent; cursor:pointer; padding:6px; border-radius:8px; transition:background .15s ease; }
-        .x-btn:hover{ background:#fff1f1; }
-
-        .option-item{
-          display:flex; align-items:center; gap:10px;
-          padding:11px 10px; border-radius:10px; cursor:pointer;
-          transition: background .12s ease;
-        }
-        .option-item:hover{ background:#f8fafc; }
-        .option-item .label{ color:#0f172a; font:600 14px/1.25 'Jost', system-ui, sans-serif; }
-        .option-item input[type="checkbox"]{
-          appearance:none; width:18px; height:18px; border:1.5px solid rgba(15,23,42,.22);
-          border-radius:6px; background:#fff; display:grid; place-items:center;
-          transition:border-color .2s, background .2s, box-shadow .2s;
-        }
-        .option-item input[type="checkbox"]:focus-visible{ outline:none; box-shadow:0 0 0 3px rgba(37,99,235,.15); }
-        .option-item input[type="checkbox"]::after{
-          content:""; width:10px; height:10px; transform:scale(0) rotate(45deg);
-          border-right:2px solid #fff; border-bottom:2px solid #fff; transition:transform .16s ease-in-out;
-        }
-        .option-item input[type="checkbox"]:checked{ border-color:#0b1b2b; background:#0b1b2b; }
-        .option-item input[type="checkbox"]:checked::after{ transform:scale(1) rotate(45deg); }
-
-        .chev-rot{ transition: transform .18s ease; }
-        .chev-rot.rot{ transform: rotate(180deg); }
-
+        .filter-panel{opacity:0;transform:translateY(8px);transition:opacity .18s,transform .18s;}
+        .filter-panel.enter{opacity:1;transform:translateY(0);}
+        .x-btn{border:0;background:transparent;cursor:pointer;padding:6px;border-radius:8px;transition:background .15s;}
+        .x-btn:hover{background:#fff1f1;}
+        .rot{transform:rotate(180deg);transition:transform .18s ease;}
         .btn-confirm{
-          margin-left:auto; height:46px; min-width:156px; padding:0 18px;
-          border-radius:999px; border:1px solid #0b1b2b; background:#0b1b2b;
-          color:#fff; font:700 15px/46px 'Jost', system-ui, sans-serif; letter-spacing:.2px;
-          box-shadow:0 6px 14px rgba(11,27,43,.18);
-          transition: transform .08s ease, box-shadow .15s ease, background .15s ease;
+          margin-left:auto;height:46px;min-width:156px;padding:0 18px;border-radius:999px;
+          border:1px solid #0b1b2b;background:#0b1b2b;color:#fff;font:700 15px/46px Inter,system-ui;
+          box-shadow:0 6px 14px rgba(11,27,43,.18);transition:transform .08s, box-shadow .15s;
         }
-        .btn-confirm:hover{ box-shadow:0 10px 22px rgba(11,27,43,.24); }
-        .btn-confirm:active{ transform: translateY(1px); }
-
-        .link-clear{
-          border:0; background:transparent; color:#2563eb; font:700 13px 'Jost', system-ui, sans-serif;
-          padding:8px 10px; border-radius:10px; transition: background .15s ease;
-        }
-        .link-clear:hover{ background:#eef2ff; }
-
-        /* Panel entrance */
-        .filter-panel{ opacity:0; transform: translateY(8px); transition: opacity .18s ease, transform .18s ease; }
-        .filter-panel.enter{ opacity:1; transform: translateY(0); }
-
-        /* Dropdown pop animation */
-        .dropdown-anim{ animation: ddIn .14s ease-out; transform-origin: top center; }
-        @keyframes ddIn{
-          0%{ opacity:0; transform: translateY(-6px) scale(.98); }
-          100%{ opacity:1; transform: translateY(0) scale(1); }
-        }
-
-        .sub-head{
-          display:flex; align-items:center; justify-content:space-between;
-          padding:10px 6px 6px; margin-top:6px; font:700 13px/1.2 'Jost', system-ui, sans-serif; color:#0f172a;
-        }
-        .sub-body{ padding-left:12px; border-left:2px solid rgba(15,23,42,.12); margin-left:6px; }
+        .btn-confirm:hover{box-shadow:0 10px 22px rgba(11,27,43,.24);}
+        .btn-confirm:active{transform:translateY(1px);}
+        .link-clear{border:0;background:transparent;color:#2563eb;font:600 13px Inter,system-ui;padding:8px 10px;border-radius:10px;}
+        .link-clear:hover{background:#eef2ff;}
       `}</style>
     </>,
-    document.body
+    portalNode
   );
-};
+}
 
-/* SubFilter (unchanged logic) */
-const SubFilter = ({ api, filterKey, selected, onSelect }) => {
-  const { data, isLoading, error } = useGetFilterOptionsQuery(api);
-  const options = getOptions(data);
+/* ---------- Dropdown portal (positions to trigger) ---------- */
+function DropdownPortal({ anchorRef, maxHeight, children, portalTarget }) {
+  const [rect, setRect] = useState(null);
+  const [containerRect, setContainerRect] = useState(null);
+  const container = portalTarget ?? document.body;
 
-  if (isLoading) return <div className="small text-muted" style={{ padding:'8px 6px' }}>Loading…</div>;
-  if (error)     return <div className="small text-danger" style={{ padding:'8px 6px' }}>Error</div>;
-  if (!options.length) return <div className="small text-muted" style={{ padding:'8px 6px' }}>No options</div>;
+  useEffect(() => {
+    const r = anchorRef.current?.getBoundingClientRect();
+    if (r) setRect(r);
+    if (container && container.getBoundingClientRect) {
+      setContainerRect(container.getBoundingClientRect());
+    }
+  }, [anchorRef, container]);
+
+  if (!rect) return null;
+
+  // If we're rendering inside the off-canvas wrapper, position absolutely
+  const useRelative = !!portalTarget && containerRect;
+  const left = useRelative ? rect.left - containerRect.left : rect.left;
+  const top  = useRelative ? rect.bottom - containerRect.top + 8 : rect.bottom + 8;
+
+  const style = {
+    position: useRelative ? "absolute" : "fixed",
+    left,
+    top,
+    width: rect.width,
+    zIndex: 9999,                     // above everything in the drawer
+    background: "#fff",
+    border: "1px solid rgba(15,23,42,.12)",
+    borderRadius: 12,
+    boxShadow: "0 10px 30px rgba(0,0,0,.12)"
+  };
+
+  return createPortal(
+    <div role="listbox" aria-multiselectable="true" className="dd-surface" style={style}
+         onMouseDown={(e) => e.stopPropagation()}>
+      <div className="dd-scroll" style={{ maxHeight, overflow: "auto", padding: "6px 8px 8px" }}>
+        {children}
+      </div>
+      <style jsx global>{`
+        .dd-scroll::-webkit-scrollbar{width:10px;}
+        .dd-scroll::-webkit-scrollbar-thumb{background:#e5e7eb;border-radius:8px;}
+        .dd-surface{animation:ddIn .14s ease-out;transform-origin:top center;}
+        @keyframes ddIn{0%{opacity:0;transform:translateY(-6px) scale(.98);}100%{opacity:1;transform:translateY(0) scale(1);}}
+      `}</style>
+    </div>,
+    container
+  );
+}
+
+
+/* ---------- Dropdown menu items ---------- */
+function MenuContent({ options, isLoading, error, values, onPick }) {
+  if (isLoading) return <div style={{ padding:10, color:"#64748b" }}>Loading…</div>;
+  if (error)     return <div style={{ padding:10, color:"#b91c1c" }}>Error loading</div>;
+  if (!options?.length) return <div style={{ padding:10, color:"#64748b" }}>No options</div>;
 
   return (
-    <div>
+    <>
       {options.map((o) => {
         const { value, name } = getNameAndValue(o);
-        const checked = Array.isArray(selected) && selected.includes(value);
+        const checked = values.includes(value);
         return (
-          <label key={value} className="option-item" style={{ margin:'2px 0' }}>
-            <input type="checkbox" checked={!!checked} onChange={() => onSelect(filterKey, value)} />
-            <span className="label">{name}</span>
+          <label
+            key={value}
+            className="dd-item"
+            style={{ display:"flex", alignItems:"center", gap:10, padding:"11px 10px", borderRadius:10, cursor:"pointer" }}
+            onMouseDown={(e) => { e.preventDefault(); onPick(value); }}  // instant toggle + delayed close at caller
+          >
+            <input type="checkbox" checked={checked} readOnly className="cbx" />
+            <span style={{ fontWeight:600, fontFamily:"Inter, system-ui", color:"#0f172a", lineHeight:1.35 }}>
+              {name}
+            </span>
+
+            <style jsx>{`
+              .dd-item:hover{ background:#f8fafc; }
+              .cbx{
+                appearance: none;
+                width: 18px;
+                height: 18px;
+                border: 1.5px solid rgba(15,23,42,.22);
+                border-radius: 6px;
+                background: #fff;
+                position: relative;
+                display: inline-block;
+                vertical-align: middle;
+              }
+              .cbx:checked{ background:#0b1b2b; border-color:#0b1b2b; }
+              .cbx::after{
+                content:"";
+                position:absolute; left:5px; top:1px;
+                width:6px; height:10px; border:2px solid #fff;
+                border-top:0; border-left:0; transform: rotate(45deg);
+              }
+              .cbx:not(:checked)::after{ display:none; }
+            `}</style>
           </label>
         );
       })}
-    </div>
+    </>
   );
-};
+}
 
-/* ---------- Tiny SVG chevron (nice + crisp) ---------- */
-function Chevron({ down, right, className = '' }) {
-  const rotate = down ? 0 : right ? 90 : 0;
+/* ---------- Icons ---------- */
+function ChevronRight() {
   return (
-    <svg
-      className={className}
-      width="18" height="18" viewBox="0 0 24 24"
-      style={{ transform: `rotate(${rotate}deg)` }}
-      fill="none" xmlns="http://www.w3.org/2000/svg"
-    >
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+      <path d="M9 6l6 6-6 6" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+function ChevronDown({ className = "" }) {
+  return (
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none">
       <path d="M6 9l6 6 6-6" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }
 
-export default ShopSidebarFilters;
+/* =======================================================
+   Single-filter helper (used by OffCanvas on mobile)
+======================================================= */
+export function FilterOnly({ filter, selected, onApply, onCancel, portalTarget }) {
+  return (
+    <FilterFlyout
+      anchorLeft={0}
+      anchorTop={0}
+      maxHeight={Math.round(window.innerHeight * 0.72)}
+      filter={filter}
+      selected={selected}
+      onClear={() => {
+        const n = { ...selected };
+        delete n[filter.key];
+        if (filter.sub?.key) delete n[filter.sub.key];
+        onApply(n);
+      }}
+      onClose={onCancel}
+      applyDraft={(next) => onApply(next)}
+      centered
+      portalTarget={portalTarget}
+    />
+  );
+}
