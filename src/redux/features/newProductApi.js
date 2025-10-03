@@ -9,6 +9,10 @@ export const newProductApi = apiSlice.injectEndpoints({
     getSingleNewProduct: builder.query({
       query: (slug) => `/product/slug/${slug}`,
     }),
+    // ✅ ADDED: fetch by Mongo ObjectId for global search
+    getProductById: builder.query({
+      query: (id) => `/product/${id}`,
+    }),
     addNewProduct: builder.mutation({
       query: (data) => ({
         url: "/product/",
@@ -96,7 +100,7 @@ export const newProductApi = apiSlice.injectEndpoints({
     getPopularNewProducts: builder.query({
       query: () => "/seo/popular",
     }),
-   /*  getOffers: builder.query({
+    /*  getOffers: builder.query({
       query: () => "/product/offers",
     }), */
     getTopRated: builder.query({
@@ -108,6 +112,8 @@ export const newProductApi = apiSlice.injectEndpoints({
 export const {
   useGetAllNewProductsQuery,
   useGetSingleNewProductQuery,
+  // ✅ ADDED export
+  useGetProductByIdQuery,
   useAddNewProductMutation,
   useUpdateNewProductMutation,
   useDeleteNewProductMutation,
@@ -134,4 +140,4 @@ export const {
   useGetPopularNewProductsQuery,
   useGetOffersQuery,
   useGetTopRatedQuery,
-} = newProductApi; 
+} = newProductApi;

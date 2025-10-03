@@ -137,7 +137,7 @@ export default function DetailsTabNav({ product = {} }) {
 
   const fullDescription = pick(description, productdescription) || '';
 
-  /* ─── SEO for SKU ─── */
+  /* ─── SEO (also used for lead time / rating / reviews) ─── */
   const { data: seoResp } = useGetSeoByProductQuery(_id, { skip: !_id });
   const seoDoc = Array.isArray(seoResp?.data) ? seoResp?.data?.[0] : (seoResp?.data || seoResp);
   const seoSku = pick(
@@ -147,8 +147,11 @@ export default function DetailsTabNav({ product = {} }) {
     seoDoc?.productCode,
     seoDoc?.code
   );
-  const skuValue = pick(seoSku);
-  const skuDisplay = nonEmpty(skuValue) ? skuValue : 'Not available';
+  const skuValue      = pick(seoSku);
+  const skuDisplay    = nonEmpty(skuValue) ? skuValue : 'Not available';
+  const leadTimeDays  = pick(seoDoc?.leadtime);
+  const ratingValue   = pick(seoDoc?.rating_value);
+  const ratingCount   = pick(seoDoc?.rating_count);
 
   /* ─── FALLBACK fetches when product prop is missing fields ─── */
   const needsColor       = !(Array.isArray(product?.color) && product.color.length);
@@ -279,14 +282,14 @@ export default function DetailsTabNav({ product = {} }) {
 
   const weightDisplay = weightPills.length > 0 ? weightPills : 'Not available';
 
-  /* rows (no unused vars now) */
+  /* rows */
   const rowsBase = [
-    { label: 'Price',          value: money(price) },
+    { label: 'Price',          value: money(product?.price) },
     { label: 'Width',          value: widthDisplay },
     { label: 'Weight',         value: weightDisplay },
-    { label: 'U/M',            value: um },
-    { label: 'Currency',       value: currency },
-    { label: 'Quantity',       value: quantity },
+    { label: 'U/M',            value: product?.um },
+    { label: 'Currency',       value: product?.currency },
+    { label: 'Quantity',       value: product?.quantity },
     { label: 'Category',       value: categoryName },
     { label: 'Sub-structure',  value: substructureName },
     { label: 'Content',        value: contentName },
@@ -300,7 +303,13 @@ export default function DetailsTabNav({ product = {} }) {
     { label: 'Suitable For', value: ((subsuitableNames.length ? subsuitableNames
                                  : (subsuitableNameFB ? [subsuitableNameFB] : [])) || ['—']).map(s => ({ v: s })) },
     ...rowsBase,
-    { label: 'SKU',          value: skuDisplay },
+
+    // ➕ Added SEO-derived fields to match DetailsWrapper
+    { label: 'Lead time',    value: nonEmpty(leadTimeDays) ? `${leadTimeDays} days` : 'Not available' },
+    { label: 'Rating',       value: nonEmpty(ratingValue) ? String(ratingValue) : 'Not available' },
+    { label: 'Reviews',      value: nonEmpty(ratingCount) ? String(ratingCount) : '0' },
+
+    { label: 'SKU',          value: nonEmpty(skuDisplay) ? skuDisplay : 'Not available' },
   ];
 
   const half = Math.ceil(rows.length / 2);
@@ -325,14 +334,10 @@ export default function DetailsTabNav({ product = {} }) {
       <div className="tab-content" id="navPresentationTabContent">
         <div className="tab-pane fade show active" id="nav-desc" role="tabpanel" tabIndex={-1}>
           <div className="tp-product-details-desc-wrapper pt-60">
-  { /<[a-z][\s\S]*>/i.test(fullDescription)
-    ? <div
-        style={{ fontSize: "18px", lineHeight: "1.7" }}
-        dangerouslySetInnerHTML={{ __html: fullDescription }}
-      />
-    : <p style={{ fontSize: "20px", lineHeight: "1.7" }}>{fullDescription}</p>}
-</div>
-
+            { /<[a-z][\s\S]*>/i.test(fullDescription)
+              ? <div style={{ fontSize: "18px", lineHeight: "1.7" }} dangerouslySetInnerHTML={{ __html: fullDescription }} />
+              : <p style={{ fontSize: "20px", lineHeight: "1.7" }}>{fullDescription}</p> }
+          </div>
         </div>
 
         <div className="tab-pane fade" id="nav-additional" role="tabpanel" tabIndex={-1}>

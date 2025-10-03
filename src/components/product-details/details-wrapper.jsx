@@ -1,21 +1,23 @@
+/* ----------------------------------------------------------------------
+   components/product-details/details-wrapper.jsx
+---------------------------------------------------------------------- */
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
 import { useGetSubstructureQuery } from '@/redux/features/substructureApi';
 import { useGetContentByIdQuery }   from '@/redux/features/contentApi';
 import { useGetSubfinishQuery }     from '@/redux/features/subfinishApi';
 import { useGetSeoByProductQuery }  from '@/redux/features/seoApi';
+import { useGetDesignByIdQuery }    from '@/redux/features/designApi';
+import { useGetMotifSizeByIdQuery } from '@/redux/features/motifSizeApi';
 
 import { add_to_wishlist } from '@/redux/features/wishlist-slice';
 
-/* --------------------------------
-   Small helpers
---------------------------------- */
+/* ---------------- small helpers ---------------- */
 const nonEmpty = (v) =>
   v !== undefined && v !== null && (typeof v === 'number' || String(v).trim() !== '');
-
 const pick = (...xs) => xs.find(nonEmpty);
 
 const asNumber = (value) => {
@@ -26,178 +28,59 @@ const asNumber = (value) => {
 
 const isObjId = (s) => typeof s === 'string' && /^[a-f\d]{24}$/i.test(s);
 
-/* --------------------------------
-   Reuse your lookup mini-components
---------------------------------- */
+/* ---------------- lookup mini-components ---------------- */
 const StructureInfo = ({ id }) => {
   const { data, isLoading, isError } = useGetSubstructureQuery(id, { skip: !id });
-  const value = !id
-    ? 'N/A'
-    : isLoading
-    ? 'Loading…'
-    : (isError || !data?.data?.name) ? 'N/A' : data.data.name;
-
-  return (
-    <div className="tp-product-details-query-item d-flex align-items-center">
-      <span>Structure: </span><p>{value}</p>
-    </div>
-  );
+  const value = !id ? 'N/A' : isLoading ? 'Loading…' : (isError || !data?.data?.name) ? 'N/A' : data.data.name;
+  return <Row label="Structure" value={value} />;
 };
-
 const ContentInfo = ({ id }) => {
   const { data, isLoading, isError } = useGetContentByIdQuery(id, { skip: !id });
-  const value = !id
-    ? 'N/A'
-    : isLoading
-    ? 'Loading…'
-    : (isError || !data?.data?.name) ? 'N/A' : data.data.name;
-
-  return (
-    <div className="tp-product-details-query-item d-flex align-items-center">
-      <span>Content: </span><p>{value}</p>
-    </div>
-  );
+  const value = !id ? 'N/A' : isLoading ? 'Loading…' : (isError || !data?.data?.name) ? 'N/A' : data.data.name;
+  return <Row label="Content" value={value} />;
 };
-
 const FinishInfo = ({ id }) => {
   const { data, isLoading, isError } = useGetSubfinishQuery(id, { skip: !id });
-  const value = !id
-    ? 'N/A'
-    : isLoading
-    ? 'Loading…'
-    : (isError || !data?.data?.name) ? 'N/A' : data.data.name;
-
-  return (
-    <div className="tp-product-details-query-item d-flex align-items-center">
-      <span>Finish: </span><p>{value}</p>
-    </div>
-  );
+  const value = !id ? 'N/A' : isLoading ? 'Loading…' : (isError || !data?.data?.name) ? 'N/A' : data.data.name;
+  return <Row label="Finish" value={value} />;
 };
 
-/* --------------------------------
-   Lightweight name lookups (design/motif/color)
-   NOTE: Uses plural collections: designs, motifs, colors
---------------------------------- */
+/* ---------------- API name resolver (robust) ---------------- */
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || '').replace(/\/+$/, '');
+const API_KEY   = process.env.NEXT_PUBLIC_API_KEY;
+const API_KEY_HEADER = process.env.NEXT_PUBLIC_API_KEY_HEADER || 'x-api-key';
 
-const fetchOneName = async (collection, id) => {
-  if (!API_BASE || !id) return null;
-
-  // map single → plural safely
-  const coll = ({ design:'designs', motif:'motifs', color:'colors' }[collection]) || collection;
-  const url = `${API_BASE}/shopy/${coll}/${id}`;
-
+const fetchJson = async (url) => {
   const headers = { 'Content-Type': 'application/json' };
-  if (process.env.NEXT_PUBLIC_API_KEY) headers['x-api-key'] = process.env.NEXT_PUBLIC_API_KEY;
-
+  if (API_KEY) headers[API_KEY_HEADER] = API_KEY;
+  const res = await fetch(url, { headers, credentials: 'include' });
+  if (!res.ok) return null;
   try {
-    const res = await fetch(url, { headers });
-    if (!res.ok) return null;
-    const json = await res.json();
-    return json?.data?.name || json?.name || null;
+    return await res.json();
   } catch {
     return null;
   }
 };
 
-const DesignInfo = ({ value }) => {
-  // value can be:
-  // - string name   → show directly
-  // - {_id,name}    → use .name
-  // - string objId  → fetch name
-  const direct =
-    typeof value === 'object' ? value?.name :
-    (typeof value === 'string' && !isObjId(value) ? value : null);
+const getFirst = (...xs) => xs.find((x) => x !== undefined && x !== null);
 
-  const id = typeof value === 'object' ? value?._id :
-             (typeof value === 'string' && isObjId(value) ? value : undefined);
-
-  const [name, setName] = useState(direct);
-
-  useEffect(() => {
-    let live = true;
-    (async () => {
-      if (direct || !id) { if (live) setName(direct || null); return; }
-      const n = await fetchOneName('design', id);
-      if (live) setName(n);
-    })();
-    return () => { live = false; };
-  }, [direct, id]);
-
-  return (
-    <div className="tp-product-details-query-item d-flex align-items-center">
-      <span>Design: </span><p>{nonEmpty(name) ? name : 'N/A'}</p>
-    </div>
-  );
+/** Try several endpoints until one answers with a name */
+const fetchNameViaCandidates = async (candidates) => {
+  for (const path of candidates) {
+    const data = await fetchJson(`${API_BASE}${path}`);
+    const name = getFirst(
+      data?.data?.name,
+      data?.data?.title,
+      data?.data?.size,   // motif size sometimes
+      data?.name,
+      data?.title
+    );
+    if (nonEmpty(name)) return String(name);
+  }
+  return null;
 };
 
-const MotifInfo = ({ value }) => {
-  const direct =
-    typeof value === 'object' ? value?.name :
-    (typeof value === 'string' && !isObjId(value) ? value : null);
-
-  const id = typeof value === 'object' ? value?._id :
-             (typeof value === 'string' && isObjId(value) ? value : undefined);
-
-  const [name, setName] = useState(direct);
-
-  useEffect(() => {
-    let live = true;
-    (async () => {
-      if (direct || !id) { if (live) setName(direct || null); return; }
-      const n = await fetchOneName('motif', id);
-      if (live) setName(n);
-    })();
-    return () => { live = false; };
-  }, [direct, id]);
-
-  return (
-    <div className="tp-product-details-query-item d-flex align-items-center">
-      <span>Motif: </span><p>{nonEmpty(name) ? name : 'N/A'}</p>
-    </div>
-  );
-};
-
-const ColorsInfo = ({ value }) => {
-  // value can be:
-  // - array of { _id, name }
-  // - array of names
-  // - array of ids
-  const arr = Array.isArray(value) ? value : [];
-
-  const namesGiven = arr
-    .map((x) => (typeof x === 'string' ? (!isObjId(x) ? x : null) : x?.name))
-    .filter(Boolean);
-
-  const ids = arr
-    .map((x) => (typeof x === 'string' ? (isObjId(x) ? x : null) : x?._id))
-    .filter(Boolean);
-
-  const [names, setNames] = useState(namesGiven);
-
-  useEffect(() => {
-    let live = true;
-    (async () => {
-      if (!ids.length) return;
-      const fetched = await Promise.all(ids.map((id) => fetchOneName('color', id)));
-      const got = fetched.filter(Boolean);
-      if (live) setNames((prev) => (prev && prev.length ? prev : got));
-    })();
-    return () => { live = false; };
-  }, [JSON.stringify(ids)]);
-
-  const label = (names && names.length ? names : []).join(', ') || 'N/A';
-
-  return (
-    <div className="tp-product-details-query-item d-flex align-items-center">
-      <span>Colors: </span><p>{label}</p>
-    </div>
-  );
-};
-
-/* --------------------------------
-   Star icons (Font Awesome)
---------------------------------- */
+/* ----- Stars ----- */
 const Stars = ({ value }) => {
   const v = Math.max(0, Math.min(5, Number(value || 0)));
   const full = Math.floor(v);
@@ -206,20 +89,136 @@ const Stars = ({ value }) => {
   const iconStyle = { marginRight: 4, color: '#f59e0b' };
   return (
     <span aria-label={`Rating ${v} out of 5`}>
-      {Array.from({ length: full }).map((_, i) => (
-        <i key={`f${i}`} className="fa-solid fa-star" style={iconStyle} />
-      ))}
+      {Array.from({ length: full }).map((_, i) => <i key={`f${i}`} className="fa-solid fa-star" style={iconStyle} />)}
       {half === 1 && <i className="fa-solid fa-star-half-stroke" style={iconStyle} />}
-      {Array.from({ length: empty }).map((_, i) => (
-        <i key={`e${i}`} className="fa-regular fa-star" style={iconStyle} />
-      ))}
+      {Array.from({ length: empty }).map((_, i) => <i key={`e${i}`} className="fa-regular fa-star" style={iconStyle} />)}
     </span>
   );
 };
 
-/* --------------------------------
-   Main component
---------------------------------- */
+/* ----- Simple row UI (keeps your styling) ----- */
+const Row = ({ label, value }) => (
+  <div className="tp-product-details-query-item d-flex align-items-center">
+    <span>{label}: </span><p>{nonEmpty(value) ? value : 'N/A'}</p>
+  </div>
+);
+
+/* ---------------- Specific resolvers ---------------- */
+const useDesignName = (design, designId) => {
+  // direct name?
+  const direct = useMemo(() => {
+    if (typeof design === 'object') return design?.name;
+    if (typeof design === 'string' && !isObjId(design)) return design;
+    return undefined;
+  }, [design]);
+
+  // prefer RTK query if id present
+  const id = useMemo(() => {
+    if (typeof design === 'object') return design?._id;
+    if (typeof design === 'string' && isObjId(design)) return design;
+    if (typeof designId === 'string' && isObjId(designId)) return designId;
+    return undefined;
+  }, [design, designId]);
+
+  const { data: dQ } = useGetDesignByIdQuery(id, { skip: !id });
+  const fromRtk = dQ?.data?.name;
+
+  const [fetched, setFetched] = useState(null);
+
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      if (!API_BASE || !id || direct || fromRtk) { if (live) setFetched(null); return; }
+      const name = await fetchNameViaCandidates([
+        `/shopy/designs/${id}`,
+        `/designs/${id}`,
+        `/design/${id}`,
+      ]);
+      if (live) setFetched(name);
+    })();
+    return () => { live = false; };
+  }, [id, direct, fromRtk]);
+
+  return pick(direct, fromRtk, fetched);
+};
+
+const useMotifName = (motif, motifId) => {
+  const direct = useMemo(() => {
+    if (typeof motif === 'object') return motif?.name || motif?.size;
+    if (typeof motif === 'string' && !isObjId(motif)) return motif;
+    return undefined;
+  }, [motif]);
+
+  const id = useMemo(() => {
+    if (typeof motif === 'object') return motif?._id;
+    if (typeof motif === 'string' && isObjId(motif)) return motif;
+    if (typeof motifId === 'string' && isObjId(motifId)) return motifId;
+    return undefined;
+  }, [motif, motifId]);
+
+  const { data: mQ } = useGetMotifSizeByIdQuery(id, { skip: !id });
+  const fromRtk = mQ?.data?.name || mQ?.data?.size;
+
+  const [fetched, setFetched] = useState(null);
+
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      if (!API_BASE || !id || direct || fromRtk) { if (live) setFetched(null); return; }
+      const name = await fetchNameViaCandidates([
+        `/shopy/motifs/${id}`,
+        `/motifs/${id}`,
+        `/motif/${id}`,
+      ]);
+      if (live) setFetched(name);
+    })();
+    return () => { live = false; };
+  }, [id, direct, fromRtk]);
+
+  return pick(direct, fromRtk, fetched);
+};
+
+const useColorNames = (colors) => {
+  // Normalize input into array
+  const arr = useMemo(() => {
+    if (!colors) return [];
+    if (Array.isArray(colors)) return colors;
+    // allow "Red, Blue, Green"
+    if (typeof colors === 'string') {
+      return colors.split(',').map(s => s.trim()).filter(Boolean);
+    }
+    return [];
+  }, [colors]);
+
+  // Already named?
+  const givenNames = useMemo(() => arr
+    .map((x) => (typeof x === 'string' ? (!isObjId(x) ? x : null) : x?.name))
+    .filter(Boolean), [arr]);
+
+  // IDs to fetch
+  const ids = useMemo(() => arr
+    .map((x) => (typeof x === 'string' ? (isObjId(x) ? x : null) : x?._id))
+    .filter(Boolean), [arr]);
+
+  const [fetched, setFetched] = useState([]);
+
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      if (!API_BASE || !ids.length) { if (live) setFetched([]); return; }
+      const names = await Promise.all(ids.map((id) =>
+        fetchNameViaCandidates([`/shopy/colors/${id}`, `/colors/${id}`, `/color/${id}`])
+      ));
+      const ok = names.filter(Boolean);
+      if (live) setFetched(ok);
+    })();
+    return () => { live = false; };
+  }, [JSON.stringify(ids)]);
+
+  return (givenNames.length ? givenNames : fetched);
+};
+
+/* ---------------- Main component ---------------- */
 const DetailsWrapper = ({ productItem = {} }) => {
   const {
     _id,
@@ -233,20 +232,15 @@ const DetailsWrapper = ({ productItem = {} }) => {
     contentId,
     finishId,
 
-    // may appear as ids, objects, or names
-    design,
-    designId,
-    motif,
-    motifId,
+    design, designId,
+    motif,  motifId,
 
-    color,    // array (ids/objects/names)
-    colors,   // just in case some feed uses this
+    color, colors,
 
-    // weight/width fields
     gsm, oz, cm, inch, width,
   } = productItem;
 
-  // SEO: lead time, rating, reviews (endpoint 404 is OK; UI is resilient)
+  /* SEO: lead time / rating / reviews */
   const { data: seoResp } = useGetSeoByProductQuery(_id, { skip: !_id });
   const seoDoc = Array.isArray(seoResp?.data) ? seoResp?.data?.[0] : (seoResp?.data || seoResp);
   const leadTimeDays = pick(seoDoc?.leadtime);
@@ -258,13 +252,12 @@ const DetailsWrapper = ({ productItem = {} }) => {
   const isInWishlist = wishlist.some((prd) => prd._id === _id);
   const toggleWishlist = () => dispatch(add_to_wishlist(productItem));
 
-  // Weight → "125 gsm / 3.7 oz"
+  /* Computed fields */
   const weightParts = [];
   if (nonEmpty(gsm)) weightParts.push(`${gsm} gsm`);
   if (nonEmpty(oz))  weightParts.push(`${Number(oz).toFixed(1)} oz`);
   const weightDisplay = weightParts.join(' / ') || 'N/A';
 
-  // Width → "147 cm / 58 inch" (rounded inch), no duplicate units
   const cmNum   = asNumber(cm ?? width);
   const inchNum = asNumber(inch);
   const widthDisplay = [
@@ -272,12 +265,9 @@ const DetailsWrapper = ({ productItem = {} }) => {
     inchNum != null ? `${Math.round(inchNum)} inch` : undefined,
   ].filter(Boolean).join(' / ') || 'N/A';
 
-  // design/motif values (id|object|string)
-  const designValue = nonEmpty(design) ? design : designId;
-  const motifValue  = nonEmpty(motif)  ? motif  : motifId;
-
-  // colors from either "color" array or "colors"
-  const colorsValue = Array.isArray(color) ? color : (Array.isArray(colors) ? colors : []);
+  const designName = useDesignName(design, designId);
+  const motifName  = useMotifName(motif, motifId);
+  const colorNames = useColorNames(Array.isArray(color) ? color : colors);
 
   return (
     <div className="tp-product-details-wrapper">
@@ -285,74 +275,44 @@ const DetailsWrapper = ({ productItem = {} }) => {
         <span>{category?.name || newCategoryId?.name}</span>
       </div>
 
-      <h3
-        className="tp-product-details-title"
-        dangerouslySetInnerHTML={{ __html: title }}
-      />
+      <h3 className="tp-product-details-title" dangerouslySetInnerHTML={{ __html: title }} />
 
       <div className="tp-product-details-inventory d-flex align-items-center mb-10">
-        <div className="tp-product-details-stock mb-10">
-          <span>{status}</span>
-        </div>
+        <div className="tp-product-details-stock mb-10"><span>{status}</span></div>
       </div>
 
       <p dangerouslySetInnerHTML={{ __html: description }} />
 
-      {/* DETAILS — two columns: left(6), right(5) */}
+      {/* QUICK FACTS */}
       <div className="tp-product-details-query" style={{ marginBottom: 20 }}>
         <div className="row g-2">
-          {/* LEFT COLUMN — 6 rows */}
+          {/* LEFT */}
           <div className="col-12 col-sm-6">
             <ContentInfo id={contentId} />
-
-            <div className="tp-product-details-query-item d-flex align-items-center">
-              <span>Weight: </span><p>{weightDisplay}</p>
-            </div>
-
-            <DesignInfo value={designValue} />
-
-            <ColorsInfo value={colorsValue} />
-
-            <div className="tp-product-details-query-item d-flex align-items-center">
-              <span>Rating: </span><p><Stars value={ratingValue} /></p>
-            </div>
-
-            <div className="tp-product-details-query-item d-flex align-items-center">
-              <span>Reviews: </span><p>{nonEmpty(ratingCount) ? String(ratingCount) : '0'}</p>
-            </div>
+            <Row label="Weight" value={weightDisplay} />
+            <Row label="Design" value={designName} />
+            <Row label="Colors" value={(colorNames && colorNames.length) ? colorNames.join(', ') : 'N/A'} />
+            <Row label="Rating" value={<Stars value={ratingValue} />} />
+            <Row label="Reviews" value={nonEmpty(ratingCount) ? String(ratingCount) : '0'} />
           </div>
 
-          {/* RIGHT COLUMN — 5 rows */}
+          {/* RIGHT */}
           <div className="col-12 col-sm-6">
-            <div className="tp-product-details-query-item d-flex align-items-center">
-              <span>Width: </span><p>{widthDisplay}</p>
-            </div>
-
+            <Row label="Width" value={widthDisplay} />
             <FinishInfo id={finishId} />
-
             <StructureInfo id={structureId} />
-
-            <MotifInfo value={motifValue} />
-
-            <div className="tp-product-details-query-item d-flex align-items-center">
-              <span>Lead time: </span><p>{nonEmpty(leadTimeDays) ? `${leadTimeDays} days` : 'N/A'}</p>
-            </div>
+            <Row label="Motif" value={motifName} />
+            <Row label="Lead time" value={nonEmpty(leadTimeDays) ? `${leadTimeDays} days` : 'N/A'} />
           </div>
         </div>
       </div>
 
+      {/* CTAs + Wishlist */}
       <div className="tp-product-details-action-wrapper">
-        <div
-          className="tp-product-details-action-item-wrapper d-flex align-items-center"
-          style={{ gap: 10 }}
-        >
+        <div className="tp-product-details-action-item-wrapper d-flex align-items-center" style={{ gap: 10 }}>
           <div className="d-flex" style={{ flexGrow: 1, gap: 10 }}>
-            <button className="tp-product-details-buy-now-btn w-100 py-1 px-1 text-sm rounded transition-all">
-              Request Sample
-            </button>
-            <button className="tp-product-details-buy-now-btn w-100 py-1 px-1 text-sm rounded transition-all">
-              Request Quote
-            </button>
+            <button className="tp-product-details-buy-now-btn w-100 py-1 px-1 text-sm rounded transition-all">Request Sample</button>
+            <button className="tp-product-details-buy-now-btn w-100 py-1 px-1 text-sm rounded transition-all">Request Quote</button>
           </div>
 
           <button
